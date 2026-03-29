@@ -1,0 +1,28 @@
+# Build artifacts
+gh-tuissue
+gh-issue-tui
+dist/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Go workspace files
+vendor/
+
+# Editors and OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Local AI and helper files
+.kiro/
+.claude/
+CLAUDE.md
+fix.md
+oss-release-plan.md
