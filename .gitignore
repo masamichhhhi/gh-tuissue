@@ -21,8 +21,5 @@ vendor/
 .vscode/
 
 # Local AI and helper files
-.kiro/
-.claude/
-CLAUDE.md
 fix.md
 oss-release-plan.md
