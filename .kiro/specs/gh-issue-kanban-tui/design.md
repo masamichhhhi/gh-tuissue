@@ -37,6 +37,10 @@ graph TB
         Main[main - エントリポイント]
     end
 
+    subgraph CLI Layer
+        Prompt[CLI Prompt - Project Selection via huh]
+    end
+
     subgraph UI Layer
         App[App Model]
         Board[Board Model]
@@ -44,7 +48,6 @@ graph TB
         Editor[Editor Model]
         Filter[Filter Model]
         Help[Help Model]
-        ProjectSelect[ProjectSelect Model]
     end
 
     subgraph Domain Layer
@@ -61,20 +64,21 @@ graph TB
     end
 
     Main --> ConfigService
+    Main --> Prompt
     Main --> App
+    Prompt --> ProjectService
+    Prompt --> ConfigService
     App --> Board
     App --> Detail
     App --> Editor
     App --> Filter
     App --> Help
-    App --> ProjectSelect
     Board --> IssueService
     Board --> ProjectService
     Detail --> IssueService
     Detail --> RepoService
     Editor --> IssueService
     Filter --> IssueService
-    ProjectSelect --> ProjectService
     IssueService --> GHClient
     ProjectService --> GHClient
     RepoService --> GHClient
@@ -85,7 +89,7 @@ graph TB
 **Architecture Integration**:
 - **Selected pattern**: Elmアーキテクチャ + レイヤード構成。Bubble Tea v2の標準パターンに準拠しつつ、GitHub API層を分離
 - **Domain boundaries**: UI Model群はBubble Teaのtea.Modelインターフェースを実装。Domain ServiceはUI非依存でAPIアクセスを抽象化
-- **New components rationale**: 各画面（Board/Detail/Editor/Filter/Help/ProjectSelect）を独立Modelとして分離し、並行開発を可能にする。ProjectServiceはGitHub Projects V2のステータス管理を担当。ConfigServiceは設定ファイルの読み書きを担当
+- **New components rationale**: 各画面（Board/Detail/Editor/Filter/Help）を独立Modelとして分離し、並行開発を可能にする。Project選択はTUI起動前にCLI層のインラインプロンプト（`charmbracelet/huh`）で実行し、TUI内の画面遷移から分離する。ProjectServiceはGitHub Projects V2のステータス管理を担当。ConfigServiceは設定ファイルの読み書きを担当
 
 ### Technology Stack
 
@@ -98,6 +102,7 @@ graph TB
 | GitHub CLI統合 | go-gh v2 | 認証・APIクライアント | github.com/cli/go-gh/v2 |
 | GitHub API | GraphQL + REST | Issue CRUD操作 | 読み取りGraphQL、更新REST補完 |
 | Markdown | glamour | Markdown→ターミナル描画 | Issue本文・コメント表示 |
+| CLI Prompt | charmbracelet/huh | TUI起動前のインラインプロンプト | Project紐付け確認・Project選択 |
 | CLI Flags | cobra or pflag | コマンドライン引数処理 | --repo, --project, --config, --help, --version |
 | Build/Release | gh-extension-precompile | マルチプラットフォームビルド | GitHub Actions |
 | Config Storage | encoding/json | 設定ファイル永続化 | Go標準ライブラリ、外部依存なし |
@@ -135,38 +140,39 @@ sequenceDiagram
     participant U as ユーザー
     participant Main as main
     participant Cfg as ConfigService
-    participant App as App Model
-    participant PS as ProjectSelect Model
+    participant Prompt as CLI Prompt via huh
     participant PSvc as ProjectService
     participant API as GitHub GraphQL
+    participant App as App Model
 
     Main->>Cfg: LoadConfig(repoRoot)
     alt 設定ファイル存在
         Cfg-->>Main: Config with projectNumber
-        Main->>PSvc: GetProject(owner, repo, projectNumber)
+        Main->>PSvc: GetProjectFields(projectNumber)
         alt Project有効
             PSvc-->>Main: ProjectInfo
-            Main->>App: 通常起動（Project付き）
+            Main->>App: TUI起動（Project付き）
         else Project無効・削除済み
             PSvc-->>Main: Error
-            Main->>App: Project選択UI表示へ
+            Main->>Main: Project選択フローへフォールバック
         end
     else 設定ファイル不在
         Cfg-->>Main: nil
-        Main->>App: Project選択フロー開始
     end
-    App->>PS: Project紐付け確認UI表示
-    U->>PS: Yes選択
-    PS->>PSvc: ListProjects(owner, repo)
+    Main->>Prompt: Bind a GitHub Project? Yes/No
+    U->>Prompt: Yes選択
+    Prompt->>PSvc: ListProjects(owner, repo)
     PSvc->>API: GraphQL query - repositoryのprojectsV2
     API-->>PSvc: []ProjectSummary
-    PSvc-->>PS: Project一覧
-    PS-->>U: Project選択UI
-    U->>PS: Project選択
-    PS->>Cfg: SaveConfig(repoRoot, projectNumber)
-    PS-->>App: 選択完了
+    PSvc-->>Prompt: Project一覧
+    Prompt-->>U: Select a project - 一覧表示
+    U->>Prompt: Project選択
+    Prompt->>Cfg: SaveConfig(repoRoot, projectNumber)
+    Main->>App: TUI起動（選択されたProject付き）
     App-->>U: カンバンボード表示
 ```
+
+Project選択はTUI起動前にCLIのインラインプロンプト（`charmbracelet/huh`のConfirm/Select）で実行される。`gh repo create`等のGitHub CLIと同様のUXを提供する。
 
 ### Issueステータス移動フロー
 
@@ -291,14 +297,14 @@ sequenceDiagram
 | 9.1 | リフレッシュ | Board, IssueService | IssueService | Issue取得フロー |
 | 9.2 | ローディング表示 | Board | BoardModel | - |
 | 9.3 | タイムアウト時キャッシュ表示 | IssueService | IssueService | - |
-| 10.1 | 初回起動時Project紐付け確認UI | App, ProjectSelect | ProjectSelectModel | 初回起動フロー |
-| 10.2 | Yes選択時Project一覧選択UI | ProjectSelect, ProjectService | ProjectSelectModel, ProjectService | 初回起動フロー |
-| 10.3 | No選択時Open/Closed 2カラム表示 | App, Board | AppModel, BoardModel | 初回起動フロー |
+| 10.1 | 初回起動時Project紐付け確認CLIプロンプト | Main, CLIPrompt | huh.Confirm | 初回起動フロー |
+| 10.2 | Yes選択時Project一覧選択CLIプロンプト | Main, CLIPrompt, ProjectService | huh.Select, ProjectService | 初回起動フロー |
+| 10.3 | No選択時Open/Closed 2カラム表示 | Main, Board | AppModel, BoardModel | 初回起動フロー |
 | 10.4 | 設定ファイル保存 | ConfigService | ConfigService | 初回起動フロー |
 | 10.5 | 次回起動時設定自動読み込み | Main, ConfigService | ConfigService | 初回起動フロー |
 | 10.6 | --projectフラグ優先 | Main | CLI | - |
-| 10.7 | --configフラグで設定変更 | Main, App, ProjectSelect | CLI, ProjectSelectModel | 初回起動フロー |
-| 10.8 | 無効Project時の再選択 | Main, App, ProjectSelect | ConfigService, ProjectService | 初回起動フロー |
+| 10.7 | --configフラグで設定変更 | Main, CLIPrompt | CLI, huh.Confirm, huh.Select | 初回起動フロー |
+| 10.8 | 無効Project時の再選択 | Main, CLIPrompt | ConfigService, ProjectService, huh | 初回起動フロー |
 | 11.1 | カラム非表示操作 | Board | BoardModel | - |
 | 11.2 | カラム表示復元操作 | Board | BoardModel | - |
 | 11.3 | 非表示カラム数ステータスバー表示 | Board, App | BoardModel, StatusBar | - |
@@ -312,13 +318,13 @@ sequenceDiagram
 
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies | Contracts |
 |-----------|-------------|--------|--------------|------------------|-----------|
-| App | UI | トップレベル画面遷移・キーバインド管理 | 5.8, 8.1-8.5, 10.1, 10.3, 11.3 | Board, Detail, Editor, Filter, Help, ProjectSelect (P0) | State |
+| CLIPrompt | CLI | TUI起動前のProject紐付け確認・選択 | 10.1-10.3, 10.7-10.8 | ProjectService (P0), ConfigService (P0), huh (P0) | Service |
+| App | UI | トップレベル画面遷移・キーバインド管理 | 5.8, 8.1-8.5, 11.3 | Board, Detail, Editor, Filter, Help (P0) | State |
 | Board | UI | カンバンボード表示・ナビゲーション | 2.1-2.5, 3.4, 5.1, 9.2, 11.1-11.4 | IssueService (P0), ProjectService (P0), Filter (P1) | State |
 | Detail | UI | Issue詳細表示・プロパティ操作・インライン編集 | 4.1-4.4, 5.4-5.6, 7.1-7.2, 12.1-12.4 | IssueService (P0), RepoService (P1) | State |
 | Editor | UI | テキスト入力・外部エディタ起動 | 5.2-5.3, 6.1-6.4, 7.1, 7.3 | IssueService (P0) | State |
 | Filter | UI | フィルタ・ソートUI | 3.1-3.3 | RepoService (P1) | State |
 | Help | UI | キーバインドヘルプ表示 | 8.3 | なし | State |
-| ProjectSelect | UI | Project紐付け確認・選択UI | 10.1-10.3, 10.7-10.8 | ProjectService (P0), ConfigService (P0) | State |
 | IssueService | Domain | Issue CRUD操作の抽象化 | 5.2-5.7, 6.3, 7.2, 9.1, 9.3, 12.1-12.3 | GHClient (P0) | Service |
 | ProjectService | Domain | GitHub Projects V2ステータス管理 | 2.2, 5.1, 10.2 | GHClient (P0) | Service |
 | RepoService | Domain | リポジトリ情報・メタデータ取得 | 1.5, 3.1, 12.1-12.3 | GHClient (P0) | Service |
@@ -332,19 +338,19 @@ sequenceDiagram
 | Field | Detail |
 |-------|--------|
 | Intent | トップレベルの画面遷移管理とグローバルキーバインドのディスパッチ |
-| Requirements | 5.8, 8.1, 8.2, 8.3, 8.4, 8.5, 10.1, 10.3, 11.3 |
+| Requirements | 5.8, 8.1, 8.2, 8.3, 8.4, 8.5, 11.3 |
 
 **Responsibilities & Constraints**
-- 現在のアクティブ画面（Board/Detail/Editor/Filter/Help/ProjectSelect）の管理
+- 現在のアクティブ画面（Board/Detail/Editor/Filter/Help）の管理
 - グローバルキーバインド（q終了、?ヘルプ、Escで戻る）の処理。Vimキーバインド（h/j/k/l）と矢印キー（←/↓/↑/→）の両方をサポート
 - 画面下部のステータスバー・キーバインドヒントの描画
 - 編集操作完了後のカンバンボード画面への確実な復帰（5.8）
 - `tea.WithAltScreen()`オプションによるaltscreenモードの使用（終了時の画面クリア、8.4）
-- 初回起動時のProject選択フローへの遷移（10.1）
 - 非表示カラム数のステータスバー表示（11.3）
+- Project選択はTUI起動前にCLI層で完了済み。AppModelはprojectNumberを受け取るのみ
 
 **Dependencies**
-- Outbound: Board, Detail, Editor, Filter, Help, ProjectSelect — 各画面Modelへの遷移 (P0)
+- Outbound: Board, Detail, Editor, Filter, Help — 各画面Modelへの遷移 (P0)
 
 **Contracts**: State [x]
 
@@ -359,7 +365,6 @@ const (
     ViewEditor
     ViewFilter
     ViewHelp
-    ViewProjectSelect
 )
 
 type AppModel struct {
@@ -369,7 +374,6 @@ type AppModel struct {
     editor         EditorModel
     filter         FilterModel
     help           HelpModel
-    projectSelect  ProjectSelectModel
     statusMsg      string
     width          int
     height         int
@@ -622,49 +626,55 @@ type FilterModel struct {
 - カラム表示・非表示のキーバインド（`d`/`D`）をヘルプ一覧に追加
 - Issue詳細画面のインライン編集キー（`l`/`a`/`m`）をヘルプ一覧に追加
 
-#### ProjectSelect Model
+### CLI Layer
+
+#### CLI Prompt - Project Selection
 
 | Field | Detail |
 |-------|--------|
-| Intent | 初回起動時のProject紐付け確認とProject一覧からの選択を管理する |
+| Intent | TUI起動前にCLIのインラインプロンプトでProject紐付け確認と選択を行う |
 | Requirements | 10.1, 10.2, 10.3, 10.7, 10.8 |
 
 **Responsibilities & Constraints**
-- 初回起動時に「Projectを紐付けますか？」のYes/No確認UIを表示（10.1）
-- Yes選択時にProjectService経由でリポジトリのProject一覧を取得し、選択UIを表示（10.2）
-- No選択時はProject紐付けなしの状態をAppに通知（10.3）
+- TUI（Bubble Tea）起動前にターミナル上でインラインプロンプトを表示（10.1）
+- `charmbracelet/huh`の`Confirm`コンポーネントで「Bind a GitHub Project?」のYes/No確認を表示（10.1）
+- Yes選択時にProjectService経由でリポジトリのProject一覧を取得し、`huh.Select`で選択肢を表示（10.2）
+- No選択時はProject紐付けなしの状態でTUIを起動（10.3）
 - 選択確定時にConfigService経由で設定ファイルに保存（10.4）
 - `--config`フラグによる再設定時も同じフローを使用（10.7）
+- Project無効時（削除済み等）はエラーメッセージを表示し、同じプロンプトフローにフォールバック（10.8）
+- プロンプトはmain.go内の関数として実装し、Bubble Tea TUIとは完全に分離する
+- `gh repo create`、`gh issue create`等のGitHub CLIと同様のUXを提供する
 
 **Dependencies**
-- Inbound: App — 初回起動時または--config時に遷移 (P0)
+- Inbound: Main — 初回起動時または--config時に呼び出し (P0)
 - Outbound: ProjectService — Project一覧取得 (P0)
 - Outbound: ConfigService — 設定保存 (P0)
+- External: charmbracelet/huh — インラインプロンプトUI (P0)
 
-**Contracts**: State [x]
+**Contracts**: Service [x]
 
-##### State Management
+##### Service Interface
 
 ```go
-type ProjectSelectPhase int
-
-const (
-    PhaseConfirm ProjectSelectPhase = iota
-    PhaseLoading
-    PhaseSelectProject
-)
-
-type ProjectSelectModel struct {
-    phase        ProjectSelectPhase
-    projects     []ProjectSummary
-    cursor       int
-    confirmYes   bool
-    configSvc    ConfigService
-    projectSvc   ProjectService
-    repoRoot     string
-    errorMsg     string
-}
+// promptProjectSelection はTUI起動前にCLIプロンプトでProject選択を実行する。
+// 戻り値: 選択されたProject番号（0はProject紐付けなし）
+func promptProjectSelection(
+    projectSvc *service.ProjectService,
+    repoRoot string,
+) (int, error)
 ```
+
+- Step 1: `huh.NewConfirm().Title("Bind a GitHub Project?")` でYes/No確認
+- Step 2 (Yesの場合): `ProjectService.ListProjects()` でProject一覧取得
+- Step 3: `huh.NewSelect().Title("Select a project")` でProject選択
+- Step 4: `config.Save(repoRoot, Config{ProjectNumber: selected})` で設定保存
+- Noの場合: 0を返し、Project紐付けなしでTUIを起動
+
+**Implementation Notes**
+- `huh`はCharm ecosystemの一部であり、Bubble Tea/Lip Glossと一貫したスタイリングを提供
+- プロンプトはaltscreenを使用しないため、選択結果がターミナル履歴に残る（CLIツールの標準的な挙動）
+- ローディング表示: Project一覧取得中は`huh`のSpinnerまたはシンプルなfmt.Printで「Fetching projects...」を表示
 
 ### Domain Layer
 
@@ -748,7 +758,7 @@ type UpdateIssueInput struct {
 
 **Dependencies**
 - Inbound: Board — ステータスカラム情報取得・ステータス移動 (P0)
-- Inbound: ProjectSelect — Project一覧取得 (P0)
+- Inbound: CLIPrompt — Project一覧取得 (P0)
 - Outbound: GHClient — API通信 (P0)
 
 **Contracts**: Service [x]
@@ -842,7 +852,7 @@ type RepoInfo struct {
 
 **Dependencies**
 - Inbound: Main — 起動時の設定読み込み (P0)
-- Inbound: ProjectSelect — 設定保存 (P0)
+- Inbound: CLIPrompt — 設定保存 (P0)
 - Outbound: ConfigFile — ファイルI/O (P0)
 
 **Contracts**: Service [x]

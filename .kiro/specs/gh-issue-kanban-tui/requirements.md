@@ -117,9 +117,9 @@ GitHub CLI拡張機能（`gh extension`）として開発する、GitHub Issue�
 
 #### Acceptance Criteria
 
-1. When リポジトリで初めてgh-tuissueを起動した時（設定ファイルが存在しない場合）, the gh-tuissue shall まず「Projectを紐付けますか？」のYes/No選択UIを表示する
-2. When ユーザーがYesを選択した時, the gh-tuissue shall リポジトリに紐づくGitHub Projects V2の一覧を取得し、紐付けるProjectを選択するUIを表示する
-3. When ユーザーがNoを選択した時, the gh-tuissue shall Projectを紐付けずにOpen/Closedの2カラムのみで表示する
+1. When リポジトリで初めてgh-tuissueを起動した時（設定ファイルが存在しない場合）, the gh-tuissue shall TUI（Bubble Tea）起動前に、CLIのインラインプロンプトとして「Bind a GitHub Project?」のYes/No選択を表示する（`gh repo create`等と同様のカーソル選択式プロンプト）
+2. When ユーザーがYesを選択した時, the gh-tuissue shall リポジトリに紐づくGitHub Projects V2の一覧を取得し、CLIのインラインプロンプトとして「Select a project」の一覧を表示する（矢印キーまたはj/kでカーソル移動、Enterで決定）
+3. When ユーザーがNoを選択した時, the gh-tuissue shall Projectを紐付けずにOpen/Closedの2カラムのみでTUIを起動する
 4. When ユーザーがProjectを選択した時, the gh-tuissue shall 選択結果をリポジトリルートの設定ファイル（`.gh-tuissue.json`）に保存する
 5. When 設定ファイルにProject番号が保存されている時, the gh-tuissue shall 次回起動時にProject選択UIを表示せず、保存された設定を自動的に使用する
 6. When ユーザーが`--project`フラグを指定した時, the gh-tuissue shall 設定ファイルの値より優先してそのProject番号を使用する（設定ファイルは上書きしない）

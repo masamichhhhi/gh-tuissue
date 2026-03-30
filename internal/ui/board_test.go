@@ -178,7 +178,7 @@ func TestBoardModel_StatusMove(t *testing.T) {
 	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
 
 	// Shift+L should request status move right
-	board, _ = board.Update(tea.KeyPressMsg{Code: 'L'})
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModShift})
 	if board.wantStatusMove != 1 {
 		t.Errorf("wantStatusMove = %d, want 1", board.wantStatusMove)
 	}
@@ -186,7 +186,7 @@ func TestBoardModel_StatusMove(t *testing.T) {
 	board.wantStatusMove = 0
 
 	// Shift+H should request status move left
-	board, _ = board.Update(tea.KeyPressMsg{Code: 'H'})
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'h', Mod: tea.ModShift})
 	if board.wantStatusMove != -1 {
 		t.Errorf("wantStatusMove = %d, want -1", board.wantStatusMove)
 	}
@@ -308,7 +308,7 @@ func TestBoardModel_RestoreAllColumns(t *testing.T) {
 	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
 
 	board, _ = board.Update(tea.KeyPressMsg{Code: 'd'}) // hide one
-	board, _ = board.Update(tea.KeyPressMsg{Code: 'D'}) // restore all
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModShift}) // restore all
 
 	if board.HiddenCount() != 0 {
 		t.Errorf("HiddenCount = %d, want 0 after restore", board.HiddenCount())

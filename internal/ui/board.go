@@ -260,7 +260,7 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 	case tea.KeyPressMsg:
 		items := m.columnItems(m.activeCol)
 		switch {
-		case msg.Code == 'h' || msg.Code == tea.KeyLeft:
+		case (msg.Code == 'h' && !msg.Mod.Contains(tea.ModShift)) || msg.Code == tea.KeyLeft:
 			// Navigate to the previous visible column
 			for i := m.activeCol - 1; i >= 0; i-- {
 				if !m.hiddenCols[i] {
@@ -268,7 +268,7 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 					break
 				}
 			}
-		case msg.Code == 'l' || msg.Code == tea.KeyRight:
+		case (msg.Code == 'l' && !msg.Mod.Contains(tea.ModShift)) || msg.Code == tea.KeyRight:
 			// Navigate to the next visible column
 			for i := m.activeCol + 1; i < len(m.columns); i++ {
 				if !m.hiddenCols[i] {
@@ -294,13 +294,13 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 					m.selectedIssue = &selected
 				}
 			}
-		case msg.Code == 'H':
+		case msg.Code == 'h' && msg.Mod.Contains(tea.ModShift):
 			// Move status left
 			m.wantStatusMove = -1
-		case msg.Code == 'L':
+		case msg.Code == 'l' && msg.Mod.Contains(tea.ModShift):
 			// Move status right
 			m.wantStatusMove = 1
-		case msg.Code == 'd':
+		case msg.Code == 'd' && !msg.Mod.Contains(tea.ModShift):
 			// Hide current column
 			vis := m.visibleColumns()
 			if len(vis) <= 1 {
@@ -327,7 +327,7 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 					}
 				}
 			}
-		case msg.Code == 'D':
+		case msg.Code == 'd' && msg.Mod.Contains(tea.ModShift):
 			// Show all hidden columns
 			m.hiddenCols = make(map[int]bool)
 		}

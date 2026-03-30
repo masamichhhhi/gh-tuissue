@@ -103,6 +103,24 @@
   - 初回起動フローにProject選択UIを挟む（Yes/No → Project一覧選択）
   - main.goの起動フローに設定ファイル読み込み→バリデーション→フォールバックのロジックが必要
 
+### Project選択UIのCLIプロンプト移行
+
+- **Context**: Requirement 10のProject選択UIをBubble Tea TUI内の画面からTUI起動前のCLIインラインプロンプトに変更
+- **Sources Consulted**: charmbracelet/huh、gh CLI（gh repo create, gh issue create）のUXパターン
+- **Findings**:
+  - `charmbracelet/huh`はCharm ecosystemの公式フォーム/プロンプトライブラリ
+  - `huh.NewConfirm()`でYes/No確認、`huh.NewSelect()`でリスト選択を提供
+  - Lip Glossと統合済みのスタイリングで、既存のCharm依存と一貫したルック&フィール
+  - `gh` CLI本体やその他のモダンCLIツール（npm init, cargo init等）と同様のインラインプロンプトUX
+  - TUI（altscreen）起動前に実行するため、選択結果がターミナル履歴に残る
+  - Bubble Tea TUIの画面遷移（ViewProjectSelect）が不要になり、AppModelが簡素化
+  - ProjectSelectModel（internal/ui/project_select.go）は廃止し、main.go内の関数に置き換え
+- **Implications**:
+  - `charmbracelet/huh`を新規依存として追加
+  - ProjectSelectModelの削除、AppModelからViewProjectSelect状態の削除
+  - main.goにProject選択ロジックを移動（TUI起動前に完結）
+  - ProjectServiceはCLI層から直接呼び出す（UI層を経由しない）
+
 ### カラム表示・非表示の設計調査
 
 - **Context**: Requirement 11で要求されるカラム表示・非表示切り替え機能の調査
@@ -200,6 +218,18 @@
 - **Rationale**: Go標準の`encoding/json`で完結。設定項目が少なくJSONで十分。`.gitignore`推奨（ユーザーごとに異なるProject紐付けの可能性）
 - **Trade-offs**: YAMLほど人間に優しくないが、設定項目がProject番号程度なので問題なし
 - **Follow-up**: 将来的に設定項目が増えた場合のマイグレーション方針
+
+### Decision: Project選択UI — CLIインラインプロンプト（charmbracelet/huh）
+
+- **Context**: Project選択UIの提供方式の再設計
+- **Alternatives Considered**:
+  1. Bubble Tea TUI内のProjectSelect画面 — 既存実装。フルスクリーンTUI内で画面遷移として管理
+  2. CLIインラインプロンプト（huh） — TUI起動前にターミナル上でインラインプロンプト表示
+  3. コマンドラインフラグのみ — `--project`フラグでの指定を必須化
+- **Selected Approach**: CLIインラインプロンプト（charmbracelet/huh）
+- **Rationale**: `gh repo create`等のGitHub CLIツールと一貫したUXを提供。Project選択はTUIの機能ではなく起動前の設定ステップであり、CLIプロンプトの方が適切。AppModelの複雑性が低減。altscreenを使わないため選択結果がターミナル履歴に残り、ユーザーが設定内容を確認しやすい
+- **Trade-offs**: huhが新規依存として追加されるが、Charm ecosystemの一部であり既存依存との一貫性がある
+- **Follow-up**: 既存のProjectSelectModel（internal/ui/project_select.go）の廃止
 
 ### Decision: インライン編集UI — 選択リストのDetail画面埋め込み
 

@@ -166,15 +166,16 @@
   - 設定ファイルのProject番号が無効（Projectが削除済み等）の場合、エラーメッセージを表示してProject選択UIにフォールバックする
   - _Requirements: 10.5, 10.6, 10.7, 10.8_
 
-- [x] 9.3 Project選択UIの実装
-  - 初回起動時に「Projectを紐付けますか？」のYes/No確認画面を表示する
-  - Yes選択時にProjectServiceからリポジトリのProject一覧を取得し、カーソル移動式の選択UIを表示する
-  - No選択時はProject紐付けなしの状態でOpen/Closedの2カラムカンバンに遷移する
-  - Project選択確定時にConfigServiceで設定ファイルに保存し、選択されたProjectのカンバンボード表示に遷移する
-  - `--config`フラグ時およびProject無効時にも同じ選択フローを再利用する
-  - Appモデルの画面状態にProjectSelect画面を追加し、遷移を管理する
+- [x] 9.3 Project選択CLIプロンプトの実装
+  - TUI起動前にCLIのインラインプロンプト（`charmbracelet/huh`）で「Bind a GitHub Project?」のYes/No確認を表示する
+  - Yes選択時にProjectServiceからリポジトリのProject一覧を取得し、`huh.NewSelect`でProject選択プロンプトを表示する
+  - No選択時はProject紐付けなしの状態でTUIを起動する（Open/Closedの2カラムカンバン）
+  - Project選択確定時にConfigServiceで設定ファイルに保存し、選択されたProject番号でTUIを起動する
+  - `--config`フラグ時およびProject無効時にも同じプロンプトフローを再利用する
+  - 既存のProjectSelectModel（internal/ui/project_select.go）を廃止し、AppModelからViewProjectSelect状態を削除する
+  - main.go内にpromptProjectSelection関数を実装し、TUI起動前に完結させる
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.7, 10.8_
-  - _Contracts: ProjectSelectModel State, ProjectService API, ConfigService API_
+  - _Contracts: CLIPrompt Service, ProjectService API, ConfigService API_
 
 - [x] 10. カラム表示・非表示の切り替え
 - [x] 10.1 (P) カラム非表示・復元ロジックの実装
