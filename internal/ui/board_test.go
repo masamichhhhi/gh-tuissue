@@ -261,3 +261,80 @@ func TestBoardModel_SelectedItem(t *testing.T) {
 		t.Errorf("SelectedItem().ItemID = %q, want %q", item.ItemID, "PVTI_1")
 	}
 }
+
+func TestBoardModel_HideColumn(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// 3 columns: Todo, In Progress, Done. Active = 0 (Todo)
+	if board.HiddenCount() != 0 {
+		t.Errorf("HiddenCount = %d, want 0", board.HiddenCount())
+	}
+
+	// Hide current column (Todo)
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'd'})
+	if board.HiddenCount() != 1 {
+		t.Errorf("HiddenCount = %d, want 1 after hide", board.HiddenCount())
+	}
+	// Active column should move to next visible (In Progress = 1)
+	if board.activeCol != 1 {
+		t.Errorf("activeCol = %d, want 1 after hiding col 0", board.activeCol)
+	}
+}
+
+func TestBoardModel_HideLastColumnRefused(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// Hide first two columns
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'd'}) // hide Todo
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'd'}) // hide In Progress
+
+	// Try to hide the last one (Done)
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'd'})
+	if board.HiddenCount() != 2 {
+		t.Errorf("HiddenCount = %d, want 2 (should not allow hiding last)", board.HiddenCount())
+	}
+	if board.wantStatusMsg == "" {
+		t.Error("expected a status message when hiding last column is refused")
+	}
+}
+
+func TestBoardModel_RestoreAllColumns(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'd'}) // hide one
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'D'}) // restore all
+
+	if board.HiddenCount() != 0 {
+		t.Errorf("HiddenCount = %d, want 0 after restore", board.HiddenCount())
+	}
+}
+
+func TestBoardModel_NavigationSkipsHidden(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// Move to col 1 (In Progress)
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'l'})
+	if board.activeCol != 1 {
+		t.Fatalf("activeCol = %d, want 1", board.activeCol)
+	}
+
+	// Hide col 1 (In Progress) - should move to col 2 (Done)
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'd'})
+	if board.activeCol != 2 {
+		t.Errorf("activeCol = %d, want 2 after hiding col 1", board.activeCol)
+	}
+
+	// Navigate left should skip hidden col 1 and go to col 0
+	board, _ = board.Update(tea.KeyPressMsg{Code: 'h'})
+	if board.activeCol != 0 {
+		t.Errorf("activeCol = %d, want 0 (skipping hidden col 1)", board.activeCol)
+	}
+}

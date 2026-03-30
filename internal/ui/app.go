@@ -19,40 +19,54 @@ const (
 	ViewEditor
 	ViewFilter
 	ViewHelp
+	ViewProjectSelect
 )
 
 type AppModel struct {
-	currentView   ViewState
-	prevView      ViewState
-	board         BoardModel
-	detail        DetailModel
-	filter        FilterModel
-	help          HelpModel
-	statusMsg     string
-	width         int
-	height        int
-	issueSvc      *service.IssueService
-	repoSvc       *service.RepoService
-	projectSvc    *service.ProjectService
-	projectNumber int
-	lastEditType  editType
+	currentView        ViewState
+	prevView           ViewState
+	board              BoardModel
+	detail             DetailModel
+	filter             FilterModel
+	help               HelpModel
+	projectSelect      ProjectSelectModel
+	statusMsg          string
+	width              int
+	height             int
+	issueSvc           *service.IssueService
+	repoSvc            *service.RepoService
+	projectSvc         *service.ProjectService
+	projectNumber      int
+	lastEditType       editType
+	repoRoot           string
+	needProjectSelect  bool
 }
 
-func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, projectSvc *service.ProjectService, projectNumber int) AppModel {
+func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, projectSvc *service.ProjectService, projectNumber int, repoRoot string, needProjectSelect bool) AppModel {
+	initialView := ViewBoard
+	if needProjectSelect {
+		initialView = ViewProjectSelect
+	}
 	return AppModel{
-		currentView:   ViewBoard,
-		board:         NewBoardModel(),
-		detail:        NewDetailModel(),
-		filter:        NewFilterModel(),
-		help:          NewHelpModel(),
-		issueSvc:      issueSvc,
-		repoSvc:       repoSvc,
-		projectSvc:    projectSvc,
-		projectNumber: projectNumber,
+		currentView:       initialView,
+		board:             NewBoardModel(),
+		detail:            NewDetailModel(repoSvc, issueSvc),
+		filter:            NewFilterModel(),
+		help:              NewHelpModel(),
+		projectSelect:     NewProjectSelectModel(projectSvc, repoRoot),
+		issueSvc:          issueSvc,
+		repoSvc:           repoSvc,
+		projectSvc:        projectSvc,
+		projectNumber:     projectNumber,
+		repoRoot:          repoRoot,
+		needProjectSelect: needProjectSelect,
 	}
 }
 
 func (m AppModel) Init() tea.Cmd {
+	if m.needProjectSelect {
+		return m.projectSelect.Init()
+	}
 	if m.projectSvc != nil && m.projectNumber > 0 {
 		return m.board.loadProjectData(m.projectSvc, m.projectNumber)
 	}
@@ -66,14 +80,25 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.board.SetSize(msg.Width, msg.Height-2)
 		m.detail.SetSize(msg.Width, msg.Height-2)
+		m.projectSelect.width = msg.Width
+		m.projectSelect.height = msg.Height - 2
 		return m, nil
 
 	case tea.KeyPressMsg:
+		// When detail selector is active, delegate all keys to detail
+		if m.currentView == ViewDetail && m.detail.editingField != EditingNone {
+			var cmd tea.Cmd
+			m.detail, cmd = m.detail.Update(msg)
+			if m.detail.wantEdit != editNone {
+				return m.handleDetailEdit()
+			}
+			return m, cmd
+		}
 		// Global keys
 		switch {
-		case msg.Code == 'q' && m.currentView != ViewEditor:
+		case msg.Code == 'q' && m.currentView != ViewEditor && m.currentView != ViewProjectSelect:
 			return m, tea.Quit
-		case msg.Code == '?' && m.currentView != ViewEditor:
+		case msg.Code == '?' && m.currentView != ViewEditor && m.currentView != ViewProjectSelect:
 			m.prevView = m.currentView
 			m.currentView = ViewHelp
 			return m, nil
@@ -151,6 +176,35 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.filter.SetMetadata(msg.labels, msg.users, msg.milestones)
 		return m, nil
 
+	case projectSelectedMsg:
+		m.projectNumber = msg.projectNumber
+		m.currentView = ViewBoard
+		m.board.loading = true
+		m.statusMsg = fmt.Sprintf("Project #%d selected", msg.projectNumber)
+		return m, m.board.loadProjectData(m.projectSvc, m.projectNumber)
+
+	case projectSkippedMsg:
+		m.currentView = ViewBoard
+		m.board.loading = true
+		return m, m.board.loadIssues(m.issueSvc)
+
+	case projectsLoadedMsg:
+		m.projectSelect, _ = m.projectSelect.Update(msg)
+		return m, nil
+
+	case inlineEditCompletedMsg:
+		m.detail, _ = m.detail.Update(msg)
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", msg.err)
+		} else {
+			m.statusMsg = "Issue updated"
+		}
+		return m, nil
+
+	case inlineEditMetadataLoadedMsg:
+		m.detail, _ = m.detail.Update(msg)
+		return m, nil
+
 	case statusMsg:
 		m.statusMsg = string(msg)
 		return m, nil
@@ -162,6 +216,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ViewBoard:
 		var boardMsg tea.Msg = msg
 		m.board, cmd = m.board.Update(boardMsg)
+		if m.board.wantStatusMsg != "" {
+			m.statusMsg = m.board.wantStatusMsg
+			m.board.wantStatusMsg = ""
+		}
 		if m.board.selectedIssue != nil {
 			m.detail.SetIssue(*m.board.selectedIssue)
 			m.board.selectedIssue = nil
@@ -187,6 +245,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case ViewHelp:
 		m.help, cmd = m.help.Update(msg)
+	case ViewProjectSelect:
+		m.projectSelect, cmd = m.projectSelect.Update(msg)
 	}
 
 	return m, cmd
@@ -274,11 +334,14 @@ func (m AppModel) handleDetailEdit() (tea.Model, tea.Cmd) {
 		m.lastEditType = editTitle
 		return m, launchEditor(issue.Title)
 	case editLabels:
-		m.statusMsg = "Label editing: use filter panel (not yet inline)"
+		cmd := m.detail.StartInlineEdit(EditingLabels)
+		return m, cmd
 	case editAssignees:
-		m.statusMsg = "Assignee editing: use filter panel (not yet inline)"
+		cmd := m.detail.StartInlineEdit(EditingAssignees)
+		return m, cmd
 	case editMilestone:
-		m.statusMsg = "Milestone editing: use filter panel (not yet inline)"
+		cmd := m.detail.StartInlineEdit(EditingMilestone)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -398,6 +461,8 @@ func (m AppModel) View() tea.View {
 		content = m.filter.View()
 	case ViewHelp:
 		content = m.help.View()
+	case ViewProjectSelect:
+		content = m.projectSelect.View()
 	default:
 		content = m.board.View()
 	}
@@ -424,13 +489,15 @@ func (m AppModel) View() tea.View {
 func (m AppModel) keyHints() string {
 	switch m.currentView {
 	case ViewBoard:
-		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status enter:open f:filter r:refresh ?:help q:quit")
+		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status d:hide D:show enter:open f:filter r:refresh ?:help q:quit")
 	case ViewDetail:
 		return dimStyle.Render("j/k/↑/↓:scroll s:status l:labels a:assign m:milestone e:edit c:comment esc:back")
 	case ViewFilter:
 		return dimStyle.Render("j/k:move space:toggle enter:apply esc:cancel")
 	case ViewHelp:
 		return dimStyle.Render("esc/q:close")
+	case ViewProjectSelect:
+		return m.projectSelect.KeyHints()
 	default:
 		return ""
 	}

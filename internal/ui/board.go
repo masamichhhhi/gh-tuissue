@@ -42,14 +42,55 @@ type BoardModel struct {
 	height        int
 	// Status move result
 	wantStatusMove int // -1=left, 1=right, 0=none
+	// Column visibility
+	hiddenCols     map[int]bool
+	wantStatusMsg  string
 }
 
 func NewBoardModel() BoardModel {
 	return BoardModel{
 		cursorIndex:  make(map[int]int),
 		scrollOffset: make(map[int]int),
+		hiddenCols:   make(map[int]bool),
 		loading:      true,
 	}
+}
+
+// visibleColumns returns the real indices of columns that are not hidden.
+func (m BoardModel) visibleColumns() []int {
+	var vis []int
+	for i := range m.columns {
+		if !m.hiddenCols[i] {
+			vis = append(vis, i)
+		}
+	}
+	return vis
+}
+
+// activeToReal converts the current activeCol (which is a real index) to a real index.
+// This is an identity since activeCol always stores the real index.
+func (m BoardModel) activeToReal() int {
+	return m.activeCol
+}
+
+// realToActive returns the position of realIdx among visible columns (0-based).
+func (m BoardModel) realToActive(realIdx int) int {
+	pos := 0
+	for i := range m.columns {
+		if m.hiddenCols[i] {
+			continue
+		}
+		if i == realIdx {
+			return pos
+		}
+		pos++
+	}
+	return 0
+}
+
+// HiddenCount returns the number of hidden columns.
+func (m BoardModel) HiddenCount() int {
+	return len(m.hiddenCols)
 }
 
 func (m *BoardModel) SetSize(w, h int) {
@@ -220,12 +261,20 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 		items := m.columnItems(m.activeCol)
 		switch {
 		case msg.Code == 'h' || msg.Code == tea.KeyLeft:
-			if m.activeCol > 0 {
-				m.activeCol--
+			// Navigate to the previous visible column
+			for i := m.activeCol - 1; i >= 0; i-- {
+				if !m.hiddenCols[i] {
+					m.activeCol = i
+					break
+				}
 			}
 		case msg.Code == 'l' || msg.Code == tea.KeyRight:
-			if m.activeCol < len(m.columns)-1 {
-				m.activeCol++
+			// Navigate to the next visible column
+			for i := m.activeCol + 1; i < len(m.columns); i++ {
+				if !m.hiddenCols[i] {
+					m.activeCol = i
+					break
+				}
 			}
 		case msg.Code == 'j' || msg.Code == tea.KeyDown:
 			if m.cursorIndex[m.activeCol] < len(items)-1 {
@@ -251,6 +300,36 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 		case msg.Code == 'L':
 			// Move status right
 			m.wantStatusMove = 1
+		case msg.Code == 'd':
+			// Hide current column
+			vis := m.visibleColumns()
+			if len(vis) <= 1 {
+				m.wantStatusMsg = "Cannot hide the last visible column"
+			} else {
+				m.hiddenCols[m.activeCol] = true
+				// Move cursor to adjacent visible column
+				moved := false
+				// Try next column first
+				for i := m.activeCol + 1; i < len(m.columns); i++ {
+					if !m.hiddenCols[i] {
+						m.activeCol = i
+						moved = true
+						break
+					}
+				}
+				if !moved {
+					// Try previous column
+					for i := m.activeCol - 1; i >= 0; i-- {
+						if !m.hiddenCols[i] {
+							m.activeCol = i
+							break
+						}
+					}
+				}
+			}
+		case msg.Code == 'D':
+			// Show all hidden columns
+			m.hiddenCols = make(map[int]bool)
 		}
 	}
 	return m, nil
@@ -338,7 +417,8 @@ func (m BoardModel) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "Loading issues...")
 	}
 
-	numCols := len(m.columns)
+	visCols := m.visibleColumns()
+	numCols := len(visCols)
 	if numCols == 0 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "No columns to display")
 	}
@@ -349,8 +429,8 @@ func (m BoardModel) View() string {
 	}
 
 	var cols []string
-	for i, col := range m.columns {
-		cols = append(cols, m.renderColumn(col.Name, i, colWidth))
+	for _, i := range visCols {
+		cols = append(cols, m.renderColumn(m.columns[i].Name, i, colWidth))
 	}
 
 	board := lipgloss.JoinHorizontal(lipgloss.Top, cols...)

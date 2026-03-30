@@ -158,7 +158,7 @@ func TestAppError(t *testing.T) {
 	})
 
 	t.Run("error codes", func(t *testing.T) {
-		codes := []ErrorCode{ErrAuth, ErrNetwork, ErrNotFound, ErrPermission, ErrValidation, ErrRateLimit, ErrProjectNotFound, ErrStatusFieldMissing, ErrUnknown}
+		codes := []ErrorCode{ErrAuth, ErrNetwork, ErrNotFound, ErrPermission, ErrValidation, ErrRateLimit, ErrProjectNotFound, ErrStatusFieldMissing, ErrConfigLoad, ErrConfigSave, ErrUnknown}
 		for i, code := range codes {
 			if int(code) != i {
 				t.Errorf("ErrorCode %d has value %d, want %d", i, int(code), i)

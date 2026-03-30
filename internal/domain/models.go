@@ -104,6 +104,8 @@ const (
 	ErrRateLimit
 	ErrProjectNotFound
 	ErrStatusFieldMissing
+	ErrConfigLoad
+	ErrConfigSave
 	ErrUnknown
 )
 
