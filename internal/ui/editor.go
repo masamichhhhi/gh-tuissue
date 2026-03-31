@@ -8,42 +8,42 @@ import (
 )
 
 // launchEditor opens $EDITOR with a temp file and returns the content.
+// It uses tea.ExecProcess to properly pause Bubble Tea's input handling
+// while the editor is running, avoiding stdin read conflicts.
 func launchEditor(initialContent string) tea.Cmd {
-	return func() tea.Msg {
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "vi"
-		}
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
 
-		tmpFile, err := os.CreateTemp("", "gh-tuissue-*.md")
-		if err != nil {
+	tmpFile, err := os.CreateTemp("", "gh-tuissue-*.md")
+	if err != nil {
+		return func() tea.Msg {
 			return editorResultMsg{err: err}
 		}
-		tmpPath := tmpFile.Name()
+	}
+	tmpPath := tmpFile.Name()
 
-		if initialContent != "" {
-			tmpFile.WriteString(initialContent)
-		}
-		tmpFile.Close()
+	if initialContent != "" {
+		tmpFile.WriteString(initialContent)
+	}
+	tmpFile.Close()
 
-		cmd := exec.Command(editor, tmpPath)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
+	c := exec.Command(editor, tmpPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
 			os.Remove(tmpPath)
 			return editorResultMsg{err: err}
 		}
 
-		content, err := os.ReadFile(tmpPath)
+		content, readErr := os.ReadFile(tmpPath)
 		os.Remove(tmpPath)
-		if err != nil {
-			return editorResultMsg{err: err}
+		if readErr != nil {
+			return editorResultMsg{err: readErr}
 		}
 
 		return editorResultMsg{content: string(content)}
-	}
+	})
 }
 
 type editorResultMsg struct {

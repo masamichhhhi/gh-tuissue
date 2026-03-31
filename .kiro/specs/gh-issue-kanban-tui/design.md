@@ -521,7 +521,7 @@ type SelectItem struct {
 **Responsibilities & Constraints**
 - タイトル等の短いテキストはインライン入力（bubbles/textinput）
 - 本文・コメント等の長文は$EDITORでの外部エディタ起動
-- 外部エディタ起動中はBubble Teaのtea.ExecCmd機能を使用
+- 外部エディタ起動中はBubble Teaのtea.ExecProcess機能を使用
 - 編集失敗時のテキスト保持
 
 **Dependencies**
