@@ -10,14 +10,14 @@ import (
 )
 
 func TestAppModel_InitialState(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	if app.currentView != ViewBoard {
 		t.Errorf("initial view = %d, want ViewBoard (%d)", app.currentView, ViewBoard)
 	}
 }
 
 func TestAppModel_QuitKey(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	msg := tea.KeyPressMsg{Code: 'q'}
 	_, cmd := app.Update(msg)
 	if cmd == nil {
@@ -26,7 +26,7 @@ func TestAppModel_QuitKey(t *testing.T) {
 }
 
 func TestAppModel_HelpToggle(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	msg := tea.KeyPressMsg{Code: '?'}
 	updated, _ := app.Update(msg)
 	appModel := updated.(AppModel)
@@ -36,7 +36,7 @@ func TestAppModel_HelpToggle(t *testing.T) {
 }
 
 func TestAppModel_EscFromHelp(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	app.currentView = ViewHelp
 	app.prevView = ViewBoard
 	msg := tea.KeyPressMsg{Code: tea.KeyEscape}
@@ -48,7 +48,7 @@ func TestAppModel_EscFromHelp(t *testing.T) {
 }
 
 func TestAppModel_WindowResize(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	updated, _ := app.Update(msg)
 	appModel := updated.(AppModel)
@@ -58,7 +58,7 @@ func TestAppModel_WindowResize(t *testing.T) {
 }
 
 func TestAppModel_EditorResultNoService(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	app.currentView = ViewDetail
 	app.lastEditType = editNone
 
@@ -73,7 +73,7 @@ func TestAppModel_EditorResultNoService(t *testing.T) {
 }
 
 func TestAppModel_EditorErrorReturnsToBoard(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	app.currentView = ViewDetail
 
 	msg := editorResultMsg{err: fmt.Errorf("editor failed")}
@@ -90,7 +90,7 @@ func dummyProjectSvc() *service.ProjectService {
 }
 
 func TestAppModel_OptimisticStatusMove(t *testing.T) {
-	app := NewAppModel(nil, nil, dummyProjectSvc(), 1)
+	app := NewAppModel(nil, nil, dummyProjectSvc(), 1, "", nil)
 	app.board.SetSize(120, 40)
 	app.board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
 
@@ -116,7 +116,7 @@ func TestAppModel_OptimisticStatusMove(t *testing.T) {
 }
 
 func TestAppModel_StatusMoveMsg_Success(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 1)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	app.board.SetSize(120, 40)
 	app.board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
 
@@ -141,7 +141,7 @@ func TestAppModel_StatusMoveMsg_Success(t *testing.T) {
 }
 
 func TestAppModel_StatusMoveMsg_Failure_Rollback(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 1)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	app.board.SetSize(120, 40)
 	app.board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
 
@@ -177,7 +177,7 @@ func TestAppModel_StatusMoveMsg_Failure_Rollback(t *testing.T) {
 }
 
 func TestAppModel_StatusMoveNoProject(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 0, "", nil)
 	app.board.SetSize(120, 40)
 	app.board.wantStatusMove = 1
 
@@ -194,7 +194,7 @@ func ptrProjectInfo(info domain.ProjectInfo) *domain.ProjectInfo {
 }
 
 func TestAppModel_ProjectDataMsg(t *testing.T) {
-	app := NewAppModel(nil, nil, nil, 0)
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	app.board.loading = true
 
 	msg := projectDataMsg{

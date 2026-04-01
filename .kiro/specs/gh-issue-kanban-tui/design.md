@@ -407,7 +407,7 @@ type statusMoveMsg struct {
 | Field | Detail |
 |-------|--------|
 | Intent | Issue一覧をGitHub Projects V2のカスタムステータスカラムでカンバンボード形式で描画する |
-| Requirements | 2.1, 2.2, 2.3, 2.4, 2.5, 3.4, 5.1, 5.7, 9.2, 11.1, 11.2, 11.3, 11.4 |
+| Requirements | 2.1, 2.2, 2.3, 2.4, 2.5, 3.4, 5.1, 5.7, 8.6, 9.2, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6 |
 
 **Responsibilities & Constraints**
 - GitHub Projects V2のStatusフィールドのoptionsに基づくN個の動的カラムレイアウトでIssueカードを描画
@@ -419,6 +419,8 @@ type statusMoveMsg struct {
 - カラム表示・非表示の切り替え（11.1, 11.2）。`hiddenCols`マップで管理し、表示カラムのみの仮想インデックスで`activeCol`を制御
 - 非表示カラム数をステータスバー情報として返却（11.3）
 - 最低1カラムの表示を維持するガード条件（11.4）
+- カラム非表示設定の変更時にコールバックで通知し、設定ファイルへの永続化をトリガー（11.5）
+- マウスホイールスクロールによるカーソル移動を無視（8.6）
 
 **Dependencies**
 - Inbound: App — 画面遷移で表示 (P0)
@@ -436,8 +438,9 @@ type BoardModel struct {
     activeCol    int
     cursorIndex  map[int]int
     scrollOffset map[int]int
-    hiddenCols   map[int]bool
-    loading      bool
+    hiddenCols        map[int]bool
+    wantConfigUpdate  bool         // カラム表示設定変更をAppに通知するフラグ
+    loading           bool
     filterState  FilterState
     projectInfo  ProjectInfo
     width        int
@@ -464,6 +467,8 @@ type ProjectItem struct {
 - ガード: `len(columns) - len(hiddenCols) <= 1`の場合、非表示操作を拒否しステータスメッセージで通知
 - 楽観的UI更新: `MoveItemToColumn(itemID, fromColIdx, toColIdx)`でアイテムをcolumns[from].Itemsから削除しcolumns[to].Itemsに追加。アイテムのStatusIDも更新する。カーソル位置は移動先カラムの末尾に追従する
 - ロールバック: `RollbackItemMove(itemID, originalStatusID, originalColIdx)`でアイテムを元のカラムに戻しStatusIDを復元する
+- 永続化: `d`/`D`操作時に`wantConfigUpdate = true`を設定。AppModelがフラグを検知し、現在の`hiddenCols`をカラム名リストに変換してConfigServiceで保存
+- 起動時復元: `SetProjectData()`/`SetFallbackIssues()`後にConfigの`HiddenColumns`カラム名リストから`hiddenCols`マップを構築。存在しないカラム名は無視
 
 #### Detail Model
 
@@ -888,13 +893,15 @@ type ConfigService interface {
 }
 
 type Config struct {
-    ProjectNumber int `json:"project_number,omitempty"`
+    ProjectNumber int      `json:"project_number,omitempty"`
+    HiddenColumns []string `json:"hidden_columns,omitempty"`
 }
 ```
 
 - Preconditions: repoRootが有効なディレクトリパスであること
 - Postconditions: SaveConfig完了後、設定ファイルがディスクに書き込まれる
 - Invariants: LoadConfigは設定ファイルが存在しない場合nil, nilを返す。JSONパースエラー時はnil, errorを返す
+- HiddenColumnsにはカラム名（ステータス名）のリストを保持する。存在しないカラム名は起動時に無視される
 
 ### Infrastructure Layer
 
@@ -1060,11 +1067,12 @@ type PageInfo struct {
 }
 
 type Config struct {
-    ProjectNumber int `json:"project_number,omitempty"`
+    ProjectNumber int      `json:"project_number,omitempty"`
+    HiddenColumns []string `json:"hidden_columns,omitempty"`
 }
 ```
 
-- **Invariants**: IssueのNumberはリポジトリ内で一意。StateはOPENまたはCLOSEDのみ。NodeIDはGraphQLのグローバルノードID。ConfigのProjectNumberが0の場合はProject未紐付けを意味する。
+- **Invariants**: IssueのNumberはリポジトリ内で一意。StateはOPENまたはCLOSEDのみ。NodeIDはGraphQLのグローバルノードID。ConfigのProjectNumberが0の場合はProject未紐付けを意味する。HiddenColumnsが空またはnilの場合は全カラム表示を意味する。
 
 ### Data Contracts & Integration
 

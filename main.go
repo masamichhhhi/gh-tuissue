@@ -55,17 +55,17 @@ func main() {
 	projectSvc := service.NewProjectService(client, repoInfo.Owner, repoInfo.Name)
 
 	// Resolve project number: --project flag > config file > CLI prompt
+	repoRoot := detectRepoRoot()
+	var cfg *config.Config
 	if projectNumber == 0 && !showConfig {
-		repoRoot := detectRepoRoot()
 		if repoRoot != "" {
-			cfg, err := config.Load(repoRoot)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)
-			}
+			cfg, _ = config.Load(repoRoot)
 			if cfg != nil && cfg.ProjectNumber > 0 {
 				projectNumber = cfg.ProjectNumber
 			}
 		}
+	} else if repoRoot != "" {
+		cfg, _ = config.Load(repoRoot)
 	}
 
 	// Validate configured project before launching TUI
@@ -79,7 +79,6 @@ func main() {
 
 	// Show project selection prompt if needed
 	if projectNumber == 0 || showConfig {
-		repoRoot := detectRepoRoot()
 		selected, err := cli.PromptProjectSelection(projectSvc, repoRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -90,7 +89,11 @@ func main() {
 		}
 	}
 
-	app := ui.NewAppModel(issueSvc, repoSvc, projectSvc, projectNumber)
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+
+	app := ui.NewAppModel(issueSvc, repoSvc, projectSvc, projectNumber, repoRoot, cfg)
 
 	p := tea.NewProgram(app)
 	if _, err := p.Run(); err != nil {
