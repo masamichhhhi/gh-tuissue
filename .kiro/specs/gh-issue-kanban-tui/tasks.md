@@ -239,26 +239,21 @@
   - 移動後のカーソル位置が移動先カラムに追従することをテストする
   - _Requirements: 5.1, 5.7, 5.9_
 
-- [ ] 14. マウスホイールスクロールによるIssue選択移動の無効化
-- [ ] 14.1 マウスホイールイベントの無視
-  - AppModel.Update()でBubble Tea v2のマウスホイールイベント（tea.MouseWheelMsg）を検知し、何もせずreturnする
-  - キーボード操作（j/k/↑/↓）によるカーソル移動・スクロールは従来通り維持する
-  - _Requirements: 8.6_
 
-- [ ] 15. カラム表示設定の永続化
-- [ ] 15.1 Config構造体の拡張
+- [x] 15. カラム表示設定の永続化
+- [x] 15.1 Config構造体の拡張
   - Config構造体に`HiddenColumns []string`フィールドを追加する
   - JSON形式: `{"project_number": 1, "hidden_columns": ["Done", "Backlog"]}`
   - HiddenColumnsが空またはnilの場合はomitemptyにより省略される
   - _Requirements: 11.5_
 
-- [ ] 15.2 AppModelへのConfig情報統合
+- [x] 15.2 AppModelへのConfig情報統合
   - AppModelにrepoRoot（リポジトリルートパス）とConfig（設定オブジェクト）を保持するフィールドを追加する
   - main.goからNewAppModel()にrepoRootとConfigを渡す
   - BoardModelの`wantConfigUpdate`フラグを検知し、現在のhiddenColsをカラム名リストに変換してConfigServiceで保存する
   - _Requirements: 11.5, 11.6_
 
-- [ ] 15.3 BoardModelへのカラム表示設定復元ロジック追加
+- [x] 15.3 BoardModelへのカラム表示設定復元ロジック追加
   - BoardModelに`ApplyHiddenColumns(names []string)`メソッドを追加する
   - SetProjectData()/SetFallbackIssues()の呼出し後にAppModelからApplyHiddenColumnsを呼び出す
   - カラム名リストからhiddenColsマップを構築し、存在しないカラム名は無視する

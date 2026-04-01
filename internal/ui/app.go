@@ -74,10 +74,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detail.SetSize(msg.Width, msg.Height-2)
 		return m, nil
 
-	case tea.MouseWheelMsg:
-		// Ignore mouse wheel scroll to prevent unintended cursor movement
-		return m, nil
-
 	case tea.KeyPressMsg:
 		// When detail selector is active, delegate all keys to detail
 		if m.currentView == ViewDetail && m.detail.editingField != EditingNone {

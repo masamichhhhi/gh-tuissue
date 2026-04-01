@@ -101,7 +101,7 @@ GitHub CLI拡張機能（`gh extension`）として開発する、GitHub Issue�
 3. The gh-tuissue shall `?`キーでキーバインドヘルプを表示する
 4. When ユーザーが`q`キーでアプリケーションを終了した時, the gh-tuissue shall ターミナルの画面をクリアし、TUIの表示が残らないようにする
 5. The gh-tuissue shall 各画面の下部にコンテキストに応じたキーバインドヒントを表示する
-6. The gh-tuissue shall マウスホイールスクロールではカンバンボード上のissue選択カーソルを移動しないこと（キーボード操作のみでカーソル移動する）
+
 
 ### Requirement 9: データ同期・リフレッシュ
 
