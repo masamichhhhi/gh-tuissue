@@ -214,6 +214,33 @@
   - _Requirements: 12.1, 12.2, 12.3, 12.4, 5.7_
   - _Contracts: DetailModel State, SelectModel State, IssueService API, RepoService API_
 
+- [ ] 13. マウスホイールスクロールによるIssue選択移動の無効化
+- [ ] 13.1 マウスホイールイベントの無視
+  - AppModel.Update()でBubble Tea v2のマウスホイールイベント（tea.MouseWheelMsg）を検知し、何もせずreturnする
+  - キーボード操作（j/k/↑/↓）によるカーソル移動・スクロールは従来通り維持する
+  - _Requirements: 8.6_
+
+- [ ] 14. カラム表示設定の永続化
+- [ ] 14.1 Config構造体の拡張
+  - Config構造体に`HiddenColumns []string`フィールドを追加する
+  - JSON形式: `{"project_number": 1, "hidden_columns": ["Done", "Backlog"]}`
+  - HiddenColumnsが空またはnilの場合はomitemptyにより省略される
+  - _Requirements: 11.5_
+
+- [ ] 14.2 AppModelへのConfig情報統合
+  - AppModelにrepoRoot（リポジトリルートパス）とConfig（設定オブジェクト）を保持するフィールドを追加する
+  - main.goからNewAppModel()にrepoRootとConfigを渡す
+  - BoardModelの`wantConfigUpdate`フラグを検知し、現在のhiddenColsをカラム名リストに変換してConfigServiceで保存する
+  - _Requirements: 11.5, 11.6_
+
+- [ ] 14.3 BoardModelへのカラム表示設定復元ロジック追加
+  - BoardModelに`ApplyHiddenColumns(names []string)`メソッドを追加する
+  - SetProjectData()/SetFallbackIssues()の呼出し後にAppModelからApplyHiddenColumnsを呼び出す
+  - カラム名リストからhiddenColsマップを構築し、存在しないカラム名は無視する
+  - `d`/`D`キー操作時に`wantConfigUpdate = true`フラグを設定する
+  - BoardModelに`HiddenColumnNames() []string`メソッドを追加し、現在のhiddenColsをカラム名リストに変換して返す
+  - _Requirements: 11.5, 11.6_
+
 - [x] 12. 統合テストとビルド設定
 - [x] 12.1 (P) ビルド・リリース設定
   - GitHub Actionsのワークフローにgh-extension-precompileを設定し、タグプッシュ時のマルチプラットフォームビルドを構成する

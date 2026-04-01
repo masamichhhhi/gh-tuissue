@@ -100,6 +100,7 @@ GitHub CLI拡張機能（`gh extension`）として開発する、GitHub Issue�
 3. The gh-tuissue shall `?`キーでキーバインドヘルプを表示する
 4. When ユーザーが`q`キーでアプリケーションを終了した時, the gh-tuissue shall ターミナルの画面をクリアし、TUIの表示が残らないようにする
 5. The gh-tuissue shall 各画面の下部にコンテキストに応じたキーバインドヒントを表示する
+6. The gh-tuissue shall マウスホイールスクロールではカンバンボード上のissue選択カーソルを移動しないこと（キーボード操作のみでカーソル移動する）
 
 ### Requirement 9: データ同期・リフレッシュ
 
@@ -136,6 +137,8 @@ GitHub CLI拡張機能（`gh extension`）として開発する、GitHub Issue�
 2. When ユーザーがカラム表示復元操作を実行した時, the gh-tuissue shall 非表示にしたカラムを元の位置に復元する
 3. When カラムが非表示の状態で, the gh-tuissue shall 非表示カラム数をステータスバーに表示する
 4. The gh-tuissue shall 少なくとも1つのカラムが常に表示された状態を維持する（全カラム非表示を防ぐ）
+5. When カラムの非表示操作が行われた時, the gh-tuissue shall 非表示カラムのリストを`.gh-tuissue.json`設定ファイルに永続化し、次回起動時に自動的に適用する
+6. When 設定ファイルに存在しないカラム名が含まれている場合, the gh-tuissue shall そのエントリを無視し、存在するカラムの設定のみを適用する
 
 ### Requirement 12: Issue詳細画面からのプロパティインライン編集
 

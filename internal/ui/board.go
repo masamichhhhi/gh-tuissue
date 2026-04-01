@@ -43,8 +43,9 @@ type BoardModel struct {
 	// Status move result
 	wantStatusMove int // -1=left, 1=right, 0=none
 	// Column visibility
-	hiddenCols     map[int]bool
-	wantStatusMsg  string
+	hiddenCols       map[int]bool
+	wantStatusMsg    string
+	wantConfigUpdate bool
 }
 
 func NewBoardModel() BoardModel {
@@ -54,6 +55,45 @@ func NewBoardModel() BoardModel {
 		hiddenCols:   make(map[int]bool),
 		loading:      true,
 	}
+}
+
+// ApplyHiddenColumns applies a list of column names to the hiddenCols map.
+// Unknown column names are silently ignored.
+func (m *BoardModel) ApplyHiddenColumns(names []string) {
+	m.hiddenCols = make(map[int]bool)
+	nameSet := make(map[string]bool, len(names))
+	for _, n := range names {
+		nameSet[n] = true
+	}
+	for i, col := range m.columns {
+		if nameSet[col.Name] {
+			m.hiddenCols[i] = true
+		}
+	}
+	// Ensure at least one column is visible
+	if len(m.hiddenCols) >= len(m.columns) {
+		m.hiddenCols = make(map[int]bool)
+	}
+	// Move activeCol to a visible column if it's hidden
+	if m.hiddenCols[m.activeCol] {
+		for i := range m.columns {
+			if !m.hiddenCols[i] {
+				m.activeCol = i
+				break
+			}
+		}
+	}
+}
+
+// HiddenColumnNames returns the names of currently hidden columns.
+func (m BoardModel) HiddenColumnNames() []string {
+	var names []string
+	for i, col := range m.columns {
+		if m.hiddenCols[i] {
+			names = append(names, col.Name)
+		}
+	}
+	return names
 }
 
 // visibleColumns returns the real indices of columns that are not hidden.
@@ -307,6 +347,7 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 				m.wantStatusMsg = "Cannot hide the last visible column"
 			} else {
 				m.hiddenCols[m.activeCol] = true
+				m.wantConfigUpdate = true
 				// Move cursor to adjacent visible column
 				moved := false
 				// Try next column first
@@ -330,6 +371,7 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 		case msg.Code == 'd' && msg.Mod.Contains(tea.ModShift):
 			// Show all hidden columns
 			m.hiddenCols = make(map[int]bool)
+			m.wantConfigUpdate = true
 		}
 	}
 	return m, nil

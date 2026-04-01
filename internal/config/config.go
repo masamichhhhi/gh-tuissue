@@ -10,7 +10,8 @@ import (
 const FileName = ".gh-tuissue.json"
 
 type Config struct {
-	ProjectNumber int `json:"project_number,omitempty"`
+	ProjectNumber int      `json:"project_number,omitempty"`
+	HiddenColumns []string `json:"hidden_columns,omitempty"`
 }
 
 // Load reads the config file from the given repository root.

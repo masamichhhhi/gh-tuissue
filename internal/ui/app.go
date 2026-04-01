@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/masamichhhhi/gh-tuissue/internal/config"
 	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
 )
@@ -36,9 +37,11 @@ type AppModel struct {
 	projectSvc    *service.ProjectService
 	projectNumber int
 	lastEditType  editType
+	repoRoot      string
+	cfg           *config.Config
 }
 
-func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, projectSvc *service.ProjectService, projectNumber int) AppModel {
+func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, projectSvc *service.ProjectService, projectNumber int, repoRoot string, cfg *config.Config) AppModel {
 	return AppModel{
 		currentView:   ViewBoard,
 		board:         NewBoardModel(),
@@ -49,6 +52,8 @@ func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, p
 		repoSvc:       repoSvc,
 		projectSvc:    projectSvc,
 		projectNumber: projectNumber,
+		repoRoot:      repoRoot,
+		cfg:           cfg,
 	}
 }
 
@@ -66,6 +71,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.board.SetSize(msg.Width, msg.Height-2)
 		m.detail.SetSize(msg.Width, msg.Height-2)
+		return m, nil
+
+	case tea.MouseWheelMsg:
+		// Ignore mouse wheel scroll to prevent unintended cursor movement
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -109,6 +118,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.board.loadIssues(m.issueSvc)
 		}
 		m.board.SetProjectData(msg.info, msg.items)
+		if m.cfg != nil && len(m.cfg.HiddenColumns) > 0 {
+			m.board.ApplyHiddenColumns(m.cfg.HiddenColumns)
+		}
 		total := 0
 		for _, col := range m.board.columns {
 			total += len(col.Items)
@@ -122,6 +134,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Error: %v", msg.err)
 		} else {
 			m.board.SetFallbackIssues(msg.issues)
+			if m.cfg != nil && len(m.cfg.HiddenColumns) > 0 {
+				m.board.ApplyHiddenColumns(m.cfg.HiddenColumns)
+			}
 			m.statusMsg = fmt.Sprintf("%d issues loaded", len(msg.issues))
 		}
 		return m, nil
@@ -187,6 +202,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.board.wantStatusMsg != "" {
 			m.statusMsg = m.board.wantStatusMsg
 			m.board.wantStatusMsg = ""
+		}
+		if m.board.wantConfigUpdate {
+			m.board.wantConfigUpdate = false
+			m.saveHiddenColumns()
 		}
 		if m.board.selectedIssue != nil {
 			m.detail.SetIssue(*m.board.selectedIssue)
@@ -264,6 +283,17 @@ func (m AppModel) handleStatusMove() (tea.Model, tea.Cmd) {
 		err := svc.MoveItemStatus(context.Background(), projectID, itemID, fieldID, optionID)
 		return statusMoveMsg{err: err}
 	}
+}
+
+func (m *AppModel) saveHiddenColumns() {
+	if m.repoRoot == "" {
+		return
+	}
+	if m.cfg == nil {
+		m.cfg = &config.Config{}
+	}
+	m.cfg.HiddenColumns = m.board.HiddenColumnNames()
+	_ = config.Save(m.repoRoot, *m.cfg)
 }
 
 func (m AppModel) handleEscape() (tea.Model, tea.Cmd) {
