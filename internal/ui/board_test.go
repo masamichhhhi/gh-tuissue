@@ -315,6 +315,162 @@ func TestBoardModel_RestoreAllColumns(t *testing.T) {
 	}
 }
 
+func TestBoardModel_MoveItemToColumn(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// Initial state: Todo has 2 items (PVTI_1, PVTI_2), In Progress has 1 (PVTI_3)
+	if len(board.columns[0].Items) != 2 {
+		t.Fatalf("Todo column has %d items, want 2", len(board.columns[0].Items))
+	}
+	if len(board.columns[1].Items) != 1 {
+		t.Fatalf("In Progress column has %d items, want 1", len(board.columns[1].Items))
+	}
+
+	// Move PVTI_1 from Todo (col 0) to In Progress (col 1)
+	ok := board.MoveItemToColumn("PVTI_1", 0, 1)
+	if !ok {
+		t.Fatal("MoveItemToColumn returned false")
+	}
+
+	// Todo should now have 1 item, In Progress should have 2
+	if len(board.columns[0].Items) != 1 {
+		t.Errorf("Todo column has %d items after move, want 1", len(board.columns[0].Items))
+	}
+	if len(board.columns[1].Items) != 2 {
+		t.Errorf("In Progress column has %d items after move, want 2", len(board.columns[1].Items))
+	}
+
+	// The moved item should have its StatusID updated to the target column's OptionID
+	found := false
+	for _, item := range board.columns[1].Items {
+		if item.ItemID == "PVTI_1" {
+			found = true
+			if item.StatusID != "opt_progress" {
+				t.Errorf("moved item StatusID = %q, want %q", item.StatusID, "opt_progress")
+			}
+		}
+	}
+	if !found {
+		t.Error("moved item PVTI_1 not found in target column")
+	}
+
+	// allItems should also be updated
+	for _, item := range board.allItems {
+		if item.ItemID == "PVTI_1" {
+			if item.StatusID != "opt_progress" {
+				t.Errorf("allItems StatusID = %q, want %q", item.StatusID, "opt_progress")
+			}
+		}
+	}
+}
+
+func TestBoardModel_MoveItemToColumn_CursorFollows(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// activeCol = 0 (Todo), cursor at 0 (PVTI_1)
+	board.activeCol = 0
+	board.cursorIndex[0] = 0
+
+	board.MoveItemToColumn("PVTI_1", 0, 1)
+
+	// Cursor should follow to target column
+	if board.activeCol != 1 {
+		t.Errorf("activeCol = %d, want 1 (should follow moved item)", board.activeCol)
+	}
+	// Cursor should point to the moved item (appended at end of target column)
+	targetItems := board.columns[1].Items
+	expectedIdx := len(targetItems) - 1
+	if board.cursorIndex[1] != expectedIdx {
+		t.Errorf("cursorIndex[1] = %d, want %d", board.cursorIndex[1], expectedIdx)
+	}
+}
+
+func TestBoardModel_MoveItemToColumn_InvalidItem(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// Try to move non-existent item
+	ok := board.MoveItemToColumn("NONEXISTENT", 0, 1)
+	if ok {
+		t.Error("MoveItemToColumn should return false for non-existent item")
+	}
+}
+
+func TestBoardModel_RollbackItemMove(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// Move PVTI_1 from Todo to In Progress
+	board.MoveItemToColumn("PVTI_1", 0, 1)
+
+	// Verify it moved
+	if len(board.columns[0].Items) != 1 {
+		t.Fatalf("expected 1 item in Todo after move, got %d", len(board.columns[0].Items))
+	}
+
+	// Rollback: move it back to Todo with original StatusID
+	ok := board.RollbackItemMove("PVTI_1", "opt_todo", 0)
+	if !ok {
+		t.Fatal("RollbackItemMove returned false")
+	}
+
+	// Todo should have 2 items again, In Progress should have 1
+	if len(board.columns[0].Items) != 2 {
+		t.Errorf("Todo column has %d items after rollback, want 2", len(board.columns[0].Items))
+	}
+	if len(board.columns[1].Items) != 1 {
+		t.Errorf("In Progress column has %d items after rollback, want 1", len(board.columns[1].Items))
+	}
+
+	// StatusID should be restored
+	for _, item := range board.columns[0].Items {
+		if item.ItemID == "PVTI_1" {
+			if item.StatusID != "opt_todo" {
+				t.Errorf("rolled back item StatusID = %q, want %q", item.StatusID, "opt_todo")
+			}
+		}
+	}
+
+	// allItems should also be restored
+	for _, item := range board.allItems {
+		if item.ItemID == "PVTI_1" {
+			if item.StatusID != "opt_todo" {
+				t.Errorf("allItems StatusID after rollback = %q, want %q", item.StatusID, "opt_todo")
+			}
+		}
+	}
+}
+
+func TestBoardModel_MoveItemToColumn_BoundaryLeft(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// Try to move from col 0 to col -1 (out of bounds)
+	ok := board.MoveItemToColumn("PVTI_1", 0, -1)
+	if ok {
+		t.Error("MoveItemToColumn should return false for out-of-bounds target")
+	}
+}
+
+func TestBoardModel_MoveItemToColumn_BoundaryRight(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// Try to move from col 2 to col 3 (out of bounds)
+	ok := board.MoveItemToColumn("PVTI_4", 2, 3)
+	if ok {
+		t.Error("MoveItemToColumn should return false for out-of-bounds target")
+	}
+}
+
 func TestBoardModel_NavigationSkipsHidden(t *testing.T) {
 	board := NewBoardModel()
 	board.SetSize(120, 40)

@@ -236,6 +236,83 @@ func matchAssignees(issue domain.Issue, assignees []string) bool {
 	return false
 }
 
+// MoveItemToColumn moves an item from one column to another, updating its StatusID.
+// It also moves the cursor to the target column. Returns false if the item or columns are invalid.
+func (m *BoardModel) MoveItemToColumn(itemID string, fromColIdx, toColIdx int) bool {
+	if fromColIdx < 0 || fromColIdx >= len(m.columns) || toColIdx < 0 || toColIdx >= len(m.columns) {
+		return false
+	}
+
+	// Find and remove the item from the source column
+	srcItems := m.columns[fromColIdx].Items
+	foundIdx := -1
+	for i, item := range srcItems {
+		if item.ItemID == itemID {
+			foundIdx = i
+			break
+		}
+	}
+	if foundIdx == -1 {
+		return false
+	}
+
+	movedItem := srcItems[foundIdx]
+	m.columns[fromColIdx].Items = append(srcItems[:foundIdx], srcItems[foundIdx+1:]...)
+
+	// Update StatusID to target column's OptionID
+	movedItem.StatusID = m.columns[toColIdx].OptionID
+
+	// Append to target column
+	m.columns[toColIdx].Items = append(m.columns[toColIdx].Items, movedItem)
+
+	// Update allItems to keep in sync
+	for i, item := range m.allItems {
+		if item.ItemID == itemID {
+			m.allItems[i].StatusID = movedItem.StatusID
+			break
+		}
+	}
+
+	// Move cursor to target column, pointing to the moved item
+	m.activeCol = toColIdx
+	m.cursorIndex[toColIdx] = len(m.columns[toColIdx].Items) - 1
+
+	return true
+}
+
+// RollbackItemMove moves an item back to its original column and restores its StatusID.
+// Used when an API call fails after an optimistic UI update.
+func (m *BoardModel) RollbackItemMove(itemID string, originalStatusID string, originalColIdx int) bool {
+	if originalColIdx < 0 || originalColIdx >= len(m.columns) {
+		return false
+	}
+
+	// Find the item in any column and remove it
+	for colIdx := range m.columns {
+		items := m.columns[colIdx].Items
+		for i, item := range items {
+			if item.ItemID == itemID {
+				// Remove from current column
+				m.columns[colIdx].Items = append(items[:i], items[i+1:]...)
+
+				// Restore StatusID and add to original column
+				item.StatusID = originalStatusID
+				m.columns[originalColIdx].Items = append(m.columns[originalColIdx].Items, item)
+
+				// Update allItems
+				for j, ai := range m.allItems {
+					if ai.ItemID == itemID {
+						m.allItems[j].StatusID = originalStatusID
+						break
+					}
+				}
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // columnItems returns the items in the given column index.
 func (m BoardModel) columnItems(col int) []domain.ProjectItem {
 	if col < 0 || col >= len(m.columns) {
@@ -409,7 +486,10 @@ type projectDataMsg struct {
 }
 
 type statusMoveMsg struct {
-	err error
+	err            error
+	itemID         string
+	originalStatus string
+	originalColIdx int
 }
 
 func (m BoardModel) View() string {

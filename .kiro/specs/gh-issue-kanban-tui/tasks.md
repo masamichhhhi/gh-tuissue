@@ -214,6 +214,31 @@
   - _Requirements: 12.1, 12.2, 12.3, 12.4, 5.7_
   - _Contracts: DetailModel State, SelectModel State, IssueService API, RepoService API_
 
+- [x] 13. ステータス移動の楽観的UI更新
+- [x] 13.1 BoardModelへのアイテム移動・ロールバックメソッド追加
+  - カンバンボード上のアイテムを指定カラムから別のカラムへ即座に移動するメソッドを実装する（アイテムをソース側のItemsから削除し、ターゲット側のItemsに追加する）
+  - アイテムのStatusIDを移動先カラムのOptionIDに更新する
+  - 移動後のカーソル位置を移動先カラムに追従させる
+  - API失敗時にアイテムを元のカラムに戻しStatusIDを復元するロールバックメソッドを実装する
+  - _Requirements: 5.1, 5.7_
+  - _Contracts: BoardModel State_
+
+- [x] 13.2 handleStatusMoveの楽観的UI更新への書き換え
+  - handleStatusMoveで、API呼び出し前にBoardModelのアイテム移動メソッドを呼び出してローカルデータを即座に更新する
+  - statusMoveMsgにロールバック情報（アイテムID、変更前のStatusID、変更前のカラムインデックス）を追加する
+  - tea.CmdでProjectServiceのMoveItemStatusを非同期に呼び出す
+  - statusMoveMsg受信時、成功の場合はreloadBoardDataを呼び出さずローカルデータをそのまま維持する
+  - statusMoveMsg受信時、失敗の場合はBoardModelのロールバックメソッドでアイテムを元のカラムに戻し、エラーメッセージをステータスバーに表示する
+  - _Requirements: 5.1, 5.7, 5.9_
+  - _Contracts: AppModel State, BoardModel State, ProjectService API_
+
+- [x] 13.3 (P) 楽観的UI更新のユニットテスト
+  - BoardModelのアイテム移動メソッドが正しくアイテムをカラム間で移動しStatusIDを更新することをテストする
+  - ロールバックメソッドがアイテムを元のカラムに戻しStatusIDを復元することをテストする
+  - 最左カラムでの左移動、最右カラムでの右移動が何もしないことをテストする
+  - 移動後のカーソル位置が移動先カラムに追従することをテストする
+  - _Requirements: 5.1, 5.7, 5.9_
+
 - [x] 12. 統合テストとビルド設定
 - [x] 12.1 (P) ビルド・リリース設定
   - GitHub Actionsのワークフローにgh-extension-precompileを設定し、タグプッシュ時のマルチプラットフォームビルドを構成する

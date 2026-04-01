@@ -59,14 +59,15 @@ GitHub CLI拡張機能（`gh extension`）として開発する、GitHub Issue�
 
 #### Acceptance Criteria
 
-1. When ユーザーがIssueのステータス変更を実行した時, the gh-tuissue shall IssueをProject Boardの隣接するステータス（カラム）に移動し、カンバン上の表示を更新する（左移動・右移動のコマンドで1つずつステータスを変更可能にする）
+1. When ユーザーがIssueのステータス変更（H/Lキー）を実行した時, the gh-tuissue shall API応答を待たずにローカルデータを即座に更新し、カンバンボード上でIssueを隣接するステータスカラムに即座に移動表示する（楽観的UI更新）。GitHub APIへのステータス更新リクエストはバックグラウンドで非同期に実行する
 2. When ユーザーがIssueのタイトル編集を実行した時, the gh-tuissue shall インライン編集UIを表示し、変更をGitHubに反映する
 3. When ユーザーがIssueの本文編集を実行した時, the gh-tuissue shall 外部エディタ（$EDITOR）を起動し、変更をGitHubに反映する
 4. When ユーザーがラベルの追加・削除を実行した時, the gh-tuissue shall リポジトリの既存ラベル一覧から選択可能にし、変更をGitHubに反映する
 5. When ユーザーがアサイニーの変更を実行した時, the gh-tuissue shall リポジトリのコラボレーター一覧から選択可能にし、変更をGitHubに反映する
 6. When ユーザーがマイルストーンの変更を実行した時, the gh-tuissue shall リポジトリの既存マイルストーン一覧から選択可能にし、変更をGitHubに反映する
-7. If GitHub APIへの更新リクエストが失敗した場合, the gh-tuissue shall エラーメッセージを表示し、ローカル表示を変更前の状態に戻す
+7. If GitHub APIへのステータス更新リクエストが失敗した場合, the gh-tuissue shall エラーメッセージを表示し、楽観的に更新したローカルデータを変更前の状態にロールバックする（Issueを元のカラムに戻す）
 8. When Issueのプロパティ編集が完了した時, the gh-tuissue shall 正しくIssue一覧（カンバンボード）画面に戻り、操作を継続可能にする
+9. When ステータス変更のAPI呼び出しが成功した時, the gh-tuissue shall 全件リロード（reloadBoardData）を行わず、楽観的に更新済みのローカルデータをそのまま維持する
 
 ### Requirement 6: Issue新規作成
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,10 +58,22 @@ func main() {
 	if projectNumber == 0 && !showConfig {
 		repoRoot := detectRepoRoot()
 		if repoRoot != "" {
-			cfg, _ := config.Load(repoRoot)
+			cfg, err := config.Load(repoRoot)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)
+			}
 			if cfg != nil && cfg.ProjectNumber > 0 {
 				projectNumber = cfg.ProjectNumber
 			}
+		}
+	}
+
+	// Validate configured project before launching TUI
+	if projectNumber > 0 && !showConfig {
+		if _, err := projectSvc.GetProjectFields(context.Background(), projectNumber); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: configured project #%d is invalid: %v\n", projectNumber, err)
+			fmt.Fprintf(os.Stderr, "Re-selecting project...\n")
+			projectNumber = 0
 		}
 	}
 

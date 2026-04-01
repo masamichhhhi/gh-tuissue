@@ -153,6 +153,23 @@
   - DetailModelに`selectModel`フィールドと`editingField`状態を追加
   - RepoServiceへの依存をDetailModelに追加
 
+### ステータス移動の楽観的UI更新（Optimistic UI Update）
+
+- **Context**: H/Lキーによるステータス移動時のAPI応答待ちによるUX低下への対応策調査
+- **Sources Consulted**: Bubble Tea v2のtea.Cmdパターン、既存のhandleStatusMove実装（app.go）、Elm Architecture における楽観的更新パターン
+- **Findings**:
+  - 現状の実装はAPI呼び出し（MoveItemStatus）→ 成功後にreloadBoardData()で全件リロードの2段階。ネットワーク往復が2回発生し、その間UIがブロックされる
+  - Bubble Teaのtea.Cmdは非同期メッセージを返す仕組みであり、API呼び出し前にModel状態を先行更新することで楽観的UIが実現可能
+  - 楽観的UI更新のパターン: (1) ローカルデータを即座に更新 → (2) tea.Cmdで非同期API呼び出し → (3) 成功時はそのまま維持 → (4) 失敗時はロールバック
+  - ロールバックの実装: 変更前のStatusIDと元のカラムインデックスを`statusMoveMsg`に含めて返し、失敗時にBoardModel内のアイテムを元の状態に復元する
+  - reloadBoardData()の省略: API成功時は楽観的更新済みのローカルデータがすでに正しい状態なので、全件リロードは不要。他ユーザーの変更は`r`（リフレッシュ）キーで手動同期
+  - BoardModel.items内のProjectItemのStatusIDとカラム配置を直接書き換える関数（MoveItemToColumn等）が必要
+- **Implications**:
+  - handleStatusMove()のリファクタリング: ローカル更新を先に実行し、tea.CmdでAPI呼び出しを返す
+  - statusMoveMsgにロールバック情報（元のStatusID、元のカラムインデックス）を追加
+  - statusMoveMsg受信時: 成功→何もしない（reloadBoardData不要）、失敗→ロールバック+エラー表示
+  - BoardModelにアイテムのカラム間移動メソッドを追加
+
 ## Architecture Pattern Evaluation
 
 

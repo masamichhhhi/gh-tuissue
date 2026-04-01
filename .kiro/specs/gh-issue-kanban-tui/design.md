@@ -174,29 +174,35 @@ sequenceDiagram
 
 Project選択はTUI起動前にCLIのインラインプロンプト（`charmbracelet/huh`のConfirm/Select）で実行される。`gh repo create`等のGitHub CLIと同様のUXを提供する。
 
-### Issueステータス移動フロー
+### Issueステータス移動フロー（楽観的UI更新）
 
 ```mermaid
 sequenceDiagram
     participant U as ユーザー
+    participant App as App Model
     participant Board as Board Model
     participant PSvc as Project Service
     participant API as GitHub GraphQL
 
-    U->>Board: ステータス移動コマンド - 左or右
-    Board->>Board: 隣接ステータスのoptionIdを解決
-    Board->>PSvc: MoveItemStatus(projectId, itemId, fieldId, optionId)
+    U->>App: ステータス移動コマンド H or L
+    App->>App: 隣接ステータスのoptionIdを解決
+    App->>Board: MoveItemToColumn - ローカルデータ即時更新
+    Board-->>U: Issueを移動先カラムに即座に再配置して表示
+    App->>PSvc: tea.Cmd - MoveItemStatus 非同期実行
     PSvc->>API: updateProjectV2ItemFieldValue mutation
     alt 成功
         API-->>PSvc: Updated ProjectV2Item
-        PSvc-->>Board: 更新結果
-        Board-->>U: Issueを移動先カラムに再配置して表示
+        PSvc-->>App: statusMoveMsg - err nil
+        Note over App: reloadBoardData不要 - ローカルデータ維持
     else 失敗
         API-->>PSvc: Error
-        PSvc-->>Board: エラー
-        Board-->>U: エラーメッセージ表示 + 元のカラムに維持
+        PSvc-->>App: statusMoveMsg - err + rollback info
+        App->>Board: RollbackItemMove - 元のカラムに復元
+        Board-->>U: エラーメッセージ表示 + Issueを元のカラムに戻す
     end
 ```
+
+楽観的UI更新により、ユーザーはAPI応答を待たずにIssueの移動を即座に確認できる。API成功時はreloadBoardDataを行わず、ローカルデータをそのまま維持する。失敗時はロールバック情報（元のStatusID・カラムインデックス）を使ってアイテムを元の位置に戻す。
 
 ### Issue編集フロー
 
@@ -274,14 +280,15 @@ sequenceDiagram
 | 4.2 | 詳細情報（Markdown含む） | Detail | DetailModel | - |
 | 4.3 | コメント一覧表示 | Detail | DetailModel | - |
 | 4.4 | 詳細ビュースクロール | Detail | DetailModel | - |
-| 5.1 | ステータス移動（左右コマンド） | Board, ProjectService | ProjectService | ステータス移動フロー |
+| 5.1 | ステータス移動（楽観的UI更新） | App, Board, ProjectService | BoardModel, ProjectService | ステータス移動フロー |
 | 5.2 | タイトル編集 | Editor | EditorModel | Issue編集フロー |
 | 5.3 | 本文編集（$EDITOR） | Editor | EditorModel | Issue編集フロー |
 | 5.4 | ラベル編集 | Detail, IssueService | IssueService | Issue編集フロー |
 | 5.5 | アサイニー編集 | Detail, IssueService | IssueService | Issue編集フロー |
 | 5.6 | マイルストーン編集 | Detail, IssueService | IssueService | Issue編集フロー |
-| 5.7 | API失敗時ロールバック | IssueService | IssueService | Issue編集フロー |
+| 5.7 | ステータス移動API失敗時ロールバック | App, Board | BoardModel | ステータス移動フロー |
 | 5.8 | 編集後カンバン画面復帰 | App, Detail, Editor | AppModel | - |
+| 5.9 | ステータス移動成功時reloadBoardData省略 | App | AppModel | ステータス移動フロー |
 | 6.1 | Issue新規作成フォーム | Editor | EditorModel | - |
 | 6.2 | 本文入力（$EDITOR） | Editor | EditorModel | - |
 | 6.3 | 作成後カンバン更新 | Board, IssueService | IssueService | - |
@@ -319,8 +326,8 @@ sequenceDiagram
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies | Contracts |
 |-----------|-------------|--------|--------------|------------------|-----------|
 | CLIPrompt | CLI | TUI起動前のProject紐付け確認・選択 | 10.1-10.3, 10.7-10.8 | ProjectService (P0), ConfigService (P0), huh (P0) | Service |
-| App | UI | トップレベル画面遷移・キーバインド管理 | 5.8, 8.1-8.5, 11.3 | Board, Detail, Editor, Filter, Help (P0) | State |
-| Board | UI | カンバンボード表示・ナビゲーション | 2.1-2.5, 3.4, 5.1, 9.2, 11.1-11.4 | IssueService (P0), ProjectService (P0), Filter (P1) | State |
+| App | UI | トップレベル画面遷移・キーバインド管理・ステータス移動制御 | 5.1, 5.7, 5.8, 5.9, 8.1-8.5, 11.3 | Board, Detail, Editor, Filter, Help (P0) | State |
+| Board | UI | カンバンボード表示・ナビゲーション・アイテム移動 | 2.1-2.5, 3.4, 5.1, 5.7, 9.2, 11.1-11.4 | IssueService (P0), ProjectService (P0), Filter (P1) | State |
 | Detail | UI | Issue詳細表示・プロパティ操作・インライン編集 | 4.1-4.4, 5.4-5.6, 7.1-7.2, 12.1-12.4 | IssueService (P0), RepoService (P1) | State |
 | Editor | UI | テキスト入力・外部エディタ起動 | 5.2-5.3, 6.1-6.4, 7.1, 7.3 | IssueService (P0) | State |
 | Filter | UI | フィルタ・ソートUI | 3.1-3.3 | RepoService (P1) | State |
@@ -338,12 +345,15 @@ sequenceDiagram
 | Field | Detail |
 |-------|--------|
 | Intent | トップレベルの画面遷移管理とグローバルキーバインドのディスパッチ |
-| Requirements | 5.8, 8.1, 8.2, 8.3, 8.4, 8.5, 11.3 |
+| Requirements | 5.1, 5.7, 5.8, 5.9, 8.1, 8.2, 8.3, 8.4, 8.5, 11.3 |
 
 **Responsibilities & Constraints**
 - 現在のアクティブ画面（Board/Detail/Editor/Filter/Help）の管理
 - グローバルキーバインド（q終了、?ヘルプ、Escで戻る）の処理。Vimキーバインド（h/j/k/l）と矢印キー（←/↓/↑/→）の両方をサポート
 - 画面下部のステータスバー・キーバインドヒントの描画
+- ステータス移動の楽観的UI更新の制御: handleStatusMoveでローカルデータを先行更新（Board.MoveItemToColumn）し、非同期でAPI呼び出し（5.1）
+- ステータス移動API失敗時のロールバック: statusMoveMsgのエラー時にBoard.RollbackItemMoveを呼び出し（5.7）
+- ステータス移動API成功時: reloadBoardDataを呼び出さず、ローカルデータを維持（5.9）
 - 編集操作完了後のカンバンボード画面への確実な復帰（5.8）
 - `tea.WithAltScreen()`オプションによるaltscreenモードの使用（終了時の画面クリア、8.4）
 - 非表示カラム数のステータスバー表示（11.3）
@@ -380,6 +390,15 @@ type AppModel struct {
 }
 ```
 
+// ステータス移動の非同期結果メッセージ（楽観的UI更新のロールバック情報を含む）
+type statusMoveMsg struct {
+    err              error
+    itemID           string  // ロールバック対象のアイテムID
+    originalStatusID string  // 変更前のステータスオプションID
+    originalColIdx   int     // 変更前のカラムインデックス
+}
+```
+
 - Persistence: メモリ内のみ（永続化なし）
 - Concurrency: Bubble Teaのシングルスレッドイベントループで管理
 
@@ -388,12 +407,13 @@ type AppModel struct {
 | Field | Detail |
 |-------|--------|
 | Intent | Issue一覧をGitHub Projects V2のカスタムステータスカラムでカンバンボード形式で描画する |
-| Requirements | 2.1, 2.2, 2.3, 2.4, 2.5, 3.4, 5.1, 9.2, 11.1, 11.2, 11.3, 11.4 |
+| Requirements | 2.1, 2.2, 2.3, 2.4, 2.5, 3.4, 5.1, 5.7, 9.2, 11.1, 11.2, 11.3, 11.4 |
 
 **Responsibilities & Constraints**
 - GitHub Projects V2のStatusフィールドのoptionsに基づくN個の動的カラムレイアウトでIssueカードを描画
 - カラム間・カード間のカーソル移動（h/j/k/l および ←/↓/↑/→）
-- ステータス移動コマンドによるIssueの隣接カラムへの移動（5.1）
+- ステータス移動の楽観的UI更新: AppModelからの指示でアイテムをカラム間で即座に移動する`MoveItemToColumn`メソッドを提供（5.1）
+- ステータス移動のロールバック: API失敗時にアイテムを元のカラムに復元する`RollbackItemMove`メソッドを提供（5.7）
 - フィルタ適用後のIssue一覧の再描画
 - ターミナルサイズ変更時のレスポンシブ対応（カラム数に応じた幅分配）
 - カラム表示・非表示の切り替え（11.1, 11.2）。`hiddenCols`マップで管理し、表示カラムのみの仮想インデックスで`activeCol`を制御
@@ -442,6 +462,8 @@ type ProjectItem struct {
 - カーソル移動: `activeCol`は常に表示カラムの仮想インデックスを参照。`visibleColumns()`ヘルパーで実カラムインデックスと仮想インデックスを変換
 - 全復元: `hiddenCols`をクリアし、全カラムを表示に戻す
 - ガード: `len(columns) - len(hiddenCols) <= 1`の場合、非表示操作を拒否しステータスメッセージで通知
+- 楽観的UI更新: `MoveItemToColumn(itemID, fromColIdx, toColIdx)`でアイテムをcolumns[from].Itemsから削除しcolumns[to].Itemsに追加。アイテムのStatusIDも更新する。カーソル位置は移動先カラムの末尾に追従する
+- ロールバック: `RollbackItemMove(itemID, originalStatusID, originalColIdx)`でアイテムを元のカラムに戻しStatusIDを復元する
 
 #### Detail Model
 
@@ -1199,7 +1221,7 @@ query ListIssues($owner: String!, $name: String!, $first: Int!, $after: String, 
 
 **Projects V2エラー**: Projectが存在しない / Statusフィールドが未設定 / projectスコープ不足 → 具体的なエラーメッセージ表示。Projectが存在しない場合はOpen/Closedフォールバックを提示
 
-**ステータス移動失敗**: updateProjectV2ItemFieldValueの失敗 → エラーメッセージ表示、Issueを元のカラムに維持
+**ステータス移動失敗**: updateProjectV2ItemFieldValueの失敗 → エラーメッセージ表示、楽観的に移動済みのIssueを元のカラムにロールバック（statusMoveMsgに含まれるrollback情報を使用してBoard.RollbackItemMoveを実行）
 
 **設定ファイルエラー**: JSONパース失敗 / ファイルI/Oエラー → 警告メッセージ表示、デフォルト値（Project未紐付け）にフォールバック
 
@@ -1240,6 +1262,7 @@ const (
 - RepoServiceのリポジトリ自動検出ロジック
 - AppErrorのエラーコード分類ロジック
 - BoardModelの動的カラム構築・隣接カラム解決ロジック
+- BoardModelのMoveItemToColumn・RollbackItemMoveロジック（アイテムの移動・復元、StatusID更新、カーソル追従）
 - BoardModelのカラム表示・非表示ロジック（hiddenCols管理、仮想インデックス変換、最低1カラムガード）
 - ConfigServiceの設定ファイル読み書き（存在しない場合、パースエラー、正常読み書き）
 - DetailModelのインライン編集状態遷移（EditingNone→EditingLabels→確定/キャンセル→EditingNone）
@@ -1257,7 +1280,8 @@ const (
 - teatestライブラリを使用したBubble Teaモデルのテスト
 - カンバン表示→Issue選択→詳細表示の画面遷移フロー
 - キーバインド操作（h/j/k/l移動、矢印キー移動、Enter選択、Esc戻る）
-- ステータス移動コマンドによるIssueのカラム間移動
+- ステータス移動コマンドによるIssueのカラム間即座移動（楽観的UI更新の確認）
+- ステータス移動API失敗時のロールバック確認（Issueが元のカラムに戻ること）
 - 編集完了後のカンバンボード画面への復帰確認
 - altscreenモードによる終了時の画面クリア確認
 - 初回起動→Project選択→設定保存→次回起動の自動読み込みフロー

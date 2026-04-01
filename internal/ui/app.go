@@ -35,6 +35,7 @@ type AppModel struct {
 	repoSvc       *service.RepoService
 	projectSvc    *service.ProjectService
 	projectNumber int
+	projectError  string
 	lastEditType  editType
 }
 
@@ -104,10 +105,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case projectDataMsg:
 		m.board.loading = false
 		if msg.err != nil {
-			// Fallback to issue list if project fails
-			m.statusMsg = fmt.Sprintf("Project error: %v — falling back to Open/Closed", msg.err)
+			m.projectError = fmt.Sprintf("Project error: %v — falling back to Open/Closed", msg.err)
+			m.statusMsg = m.projectError
 			return m, m.board.loadIssues(m.issueSvc)
 		}
+		m.projectError = ""
 		m.board.SetProjectData(msg.info, msg.items)
 		total := 0
 		for _, col := range m.board.columns {
@@ -122,7 +124,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Error: %v", msg.err)
 		} else {
 			m.board.SetFallbackIssues(msg.issues)
-			m.statusMsg = fmt.Sprintf("%d issues loaded", len(msg.issues))
+			if m.projectError != "" {
+				m.statusMsg = m.projectError
+			} else {
+				m.statusMsg = fmt.Sprintf("%d issues loaded", len(msg.issues))
+			}
 		}
 		return m, nil
 
@@ -138,10 +144,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusMoveMsg:
 		if msg.err != nil {
+			m.board.RollbackItemMove(msg.itemID, msg.originalStatus, msg.originalColIdx)
 			m.statusMsg = fmt.Sprintf("Status move failed: %v", msg.err)
 		} else {
 			m.statusMsg = "Status updated"
-			return m, m.reloadBoardData()
 		}
 		return m, nil
 
@@ -253,16 +259,28 @@ func (m AppModel) handleStatusMove() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Save rollback info before optimistic update
+	itemID := item.ItemID
+	originalStatus := item.StatusID
+	originalColIdx := currentIdx
+
+	// Optimistic UI update: move item locally before API call
+	m.board.MoveItemToColumn(itemID, currentIdx, targetIdx)
+
 	targetOption := options[targetIdx]
 	projectID := m.board.projectInfo.ID
 	fieldID := m.board.projectInfo.StatusField.ID
-	itemID := item.ItemID
 	optionID := targetOption.ID
 	svc := m.projectSvc
 
 	return m, func() tea.Msg {
 		err := svc.MoveItemStatus(context.Background(), projectID, itemID, fieldID, optionID)
-		return statusMoveMsg{err: err}
+		return statusMoveMsg{
+			err:            err,
+			itemID:         itemID,
+			originalStatus: originalStatus,
+			originalColIdx: originalColIdx,
+		}
 	}
 }
 
