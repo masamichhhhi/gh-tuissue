@@ -86,7 +86,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Global keys
 		switch {
-		case msg.Code == 'q' && m.currentView != ViewEditor:
+		case msg.Code == 'c' && msg.Mod.Contains(tea.ModCtrl):
 			return m, tea.Quit
 		case msg.Code == '?' && m.currentView != ViewEditor:
 			m.prevView = m.currentView
@@ -497,13 +497,13 @@ func (m AppModel) View() tea.View {
 func (m AppModel) keyHints() string {
 	switch m.currentView {
 	case ViewBoard:
-		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status d:hide D:show enter:open f:filter r:refresh ?:help q:quit")
+		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status d:hide D:show enter:open f:filter r:refresh ?:help")
 	case ViewDetail:
 		return dimStyle.Render("j/k/↑/↓:scroll s:status l:labels a:assign m:milestone e:edit c:comment esc:back")
 	case ViewFilter:
 		return dimStyle.Render("j/k:move space:toggle enter:apply esc:cancel")
 	case ViewHelp:
-		return dimStyle.Render("esc/q:close")
+		return dimStyle.Render("esc:close")
 	default:
 		return ""
 	}

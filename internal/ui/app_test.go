@@ -16,12 +16,12 @@ func TestAppModel_InitialState(t *testing.T) {
 	}
 }
 
-func TestAppModel_QuitKey(t *testing.T) {
+func TestAppModel_QKeyDoesNotQuit(t *testing.T) {
 	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	msg := tea.KeyPressMsg{Code: 'q'}
 	_, cmd := app.Update(msg)
-	if cmd == nil {
-		t.Fatal("expected quit command, got nil")
+	if cmd != nil {
+		t.Fatal("expected no quit command from q key, but got one")
 	}
 }
 

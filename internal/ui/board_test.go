@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/mattn/go-runewidth"
 	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 )
 
@@ -468,6 +470,78 @@ func TestBoardModel_MoveItemToColumn_BoundaryRight(t *testing.T) {
 	ok := board.MoveItemToColumn("PVTI_4", 2, 3)
 	if ok {
 		t.Error("MoveItemToColumn should return false for out-of-bounds target")
+	}
+}
+
+func TestTruncateText(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		maxWidth int
+		wantFull bool // true if output should equal input (no truncation)
+	}{
+		{
+			name:     "ASCII short enough",
+			input:    "hello",
+			maxWidth: 20,
+			wantFull: true,
+		},
+		{
+			name:     "ASCII exact fit",
+			input:    "hello",
+			maxWidth: 5,
+			wantFull: true,
+		},
+		{
+			name:     "ASCII truncated",
+			input:    "hello world this is long",
+			maxWidth: 10,
+		},
+		{
+			name:     "Japanese short enough",
+			input:    "バグ修正",
+			maxWidth: 20,
+			wantFull: true,
+		},
+		{
+			name:     "Japanese truncated",
+			input:    "日本語のタイトルが長い場合のテスト",
+			maxWidth: 16,
+		},
+		{
+			name:     "Mixed ASCII and Japanese",
+			input:    "Fix: 日本語テキストの問題を修正",
+			maxWidth: 15,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateText(tt.input, tt.maxWidth)
+
+			if tt.wantFull {
+				if got != tt.input {
+					t.Errorf("expected no truncation, got %q", got)
+				}
+				return
+			}
+
+			// Truncated result must end with "..."
+			if !strings.HasSuffix(got, "...") {
+				t.Errorf("truncated text should end with '...', got %q", got)
+			}
+
+			// Display width must not exceed maxWidth
+			w := runewidth.StringWidth(got)
+			if w > tt.maxWidth {
+				t.Errorf("display width %d exceeds maxWidth %d, got %q", w, tt.maxWidth, got)
+			}
+
+			// Must not contain replacement character (the bug we fixed)
+			if strings.Contains(got, "�") {
+				t.Errorf("truncated text contains replacement character: %q", got)
+			}
+		})
 	}
 }
 

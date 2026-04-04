@@ -45,51 +45,58 @@ graph TB
         App[App Model]
         Board[Board Model]
         Detail[Detail Model]
-        Editor[Editor Model]
+        Editor[Editor]
         Filter[Filter Model]
         Help[Help Model]
+        Selector[Selector Model]
     end
 
     subgraph Domain Layer
         IssueService[Issue Service]
         ProjectService[Project Service]
         RepoService[Repo Service]
-        ConfigService[Config Service]
+        DomainModels[Domain Models]
+    end
+
+    subgraph Repository Layer
+        RepoResolver[Repo Resolver]
+        ConfigPkg[Config Package]
     end
 
     subgraph Infrastructure Layer
         GHClient[GitHub API Client]
-        GHAuth[gh auth 統合]
-        ConfigFile[設定ファイル .gh-tuissue.json]
+        GHAuth[Token Resolution]
     end
 
-    Main --> ConfigService
+    Main --> RepoResolver
+    Main --> ConfigPkg
     Main --> Prompt
     Main --> App
     Prompt --> ProjectService
-    Prompt --> ConfigService
+    Prompt --> ConfigPkg
     App --> Board
     App --> Detail
     App --> Editor
     App --> Filter
     App --> Help
+    Detail --> Selector
     Board --> IssueService
     Board --> ProjectService
     Detail --> IssueService
     Detail --> RepoService
     Editor --> IssueService
-    Filter --> IssueService
+    Filter --> RepoService
     IssueService --> GHClient
     ProjectService --> GHClient
     RepoService --> GHClient
     GHClient --> GHAuth
-    ConfigService --> ConfigFile
 ```
 
 **Architecture Integration**:
 - **Selected pattern**: Elmアーキテクチャ + レイヤード構成。Bubble Tea v2の標準パターンに準拠しつつ、GitHub API層を分離
 - **Domain boundaries**: UI Model群はBubble Teaのtea.Modelインターフェースを実装。Domain ServiceはUI非依存でAPIアクセスを抽象化
-- **New components rationale**: 各画面（Board/Detail/Editor/Filter/Help）を独立Modelとして分離し、並行開発を可能にする。Project選択はTUI起動前にCLI層のインラインプロンプト（`charmbracelet/huh`）で実行し、TUI内の画面遷移から分離する。ProjectServiceはGitHub Projects V2のステータス管理を担当。ConfigServiceは設定ファイルの読み書きを担当
+- **Package structure**: `internal/domain/`にドメインモデルを集約、`internal/repo/`にリポジトリ検出ロジックを分離、`internal/config/`に設定ファイルI/Oを配置
+- **New components rationale**: 各画面（Board/Detail/Editor/Filter/Help）を独立Modelとして分離し、並行開発を可能にする。SelectorModelは汎用的な選択UIコンポーネントとしてDetailとFilterで再利用。Project選択はTUI起動前にCLI層のインラインプロンプト（`charmbracelet/huh`）で実行し、TUI内の画面遷移から分離
 
 ### Technology Stack
 
@@ -98,16 +105,16 @@ graph TB
 | Language | Go 1.22+ | 実装言語 | gh extensionの標準言語 |
 | TUI Framework | Bubble Tea v2 | UI描画・イベント処理 | charm.land/bubbletea/v2 |
 | Styling | Lip Gloss | ターミナルスタイリング | カラー・ボーダー・レイアウト |
-| Components | Bubbles | 再利用コンポーネント | viewport, list, textinput等 |
-| GitHub CLI統合 | go-gh v2 | 認証・APIクライアント | github.com/cli/go-gh/v2 |
+| Components | Bubbles | 再利用コンポーネント | viewport, textinput等 |
+| GitHub API | Raw HTTP Client | 認証・REST/GraphQL通信 | net/http + 手動Bearer認証。トークンはGH_TOKEN/GITHUB_TOKEN環境変数または`gh auth token`から解決 |
 | GitHub API | GraphQL + REST | Issue CRUD操作 | 読み取りGraphQL、更新REST補完 |
 | Markdown | glamour | Markdown→ターミナル描画 | Issue本文・コメント表示 |
 | CLI Prompt | charmbracelet/huh | TUI起動前のインラインプロンプト | Project紐付け確認・Project選択 |
-| CLI Flags | cobra or pflag | コマンドライン引数処理 | --repo, --project, --config, --help, --version |
+| CLI Flags | spf13/pflag | コマンドライン引数処理 | --repo, --project, --config, --version |
 | Build/Release | gh-extension-precompile | マルチプラットフォームビルド | GitHub Actions |
 | Config Storage | encoding/json | 設定ファイル永続化 | Go標準ライブラリ、外部依存なし |
 
-> 詳細な技術選定の根拠は `research.md` を参照。
+> デザイン初期段階ではgo-gh v2を検討していたが、Raw HTTPクライアントによるシンプルな実装を採用した。詳細な技術選定の根拠は `research.md` を参照。
 
 ## System Flows
 
@@ -139,13 +146,13 @@ sequenceDiagram
 sequenceDiagram
     participant U as ユーザー
     participant Main as main
-    participant Cfg as ConfigService
+    participant Cfg as Config Package
     participant Prompt as CLI Prompt via huh
     participant PSvc as ProjectService
     participant API as GitHub GraphQL
     participant App as App Model
 
-    Main->>Cfg: LoadConfig(repoRoot)
+    Main->>Cfg: config.Load(repoRoot)
     alt 設定ファイル存在
         Cfg-->>Main: Config with projectNumber
         Main->>PSvc: GetProjectFields(projectNumber)
@@ -167,7 +174,7 @@ sequenceDiagram
     PSvc-->>Prompt: Project一覧
     Prompt-->>U: Select a project - 一覧表示
     U->>Prompt: Project選択
-    Prompt->>Cfg: SaveConfig(repoRoot, projectNumber)
+    Prompt->>Cfg: config.Save(repoRoot, Config)
     Main->>App: TUI起動（選択されたProject付き）
     App-->>U: カンバンボード表示
 ```
@@ -233,6 +240,7 @@ sequenceDiagram
 sequenceDiagram
     participant U as ユーザー
     participant Detail as Detail Model
+    participant Selector as Selector Model
     participant RSvc as Repo Service
     participant ISvc as Issue Service
     participant API as GitHub API
@@ -242,8 +250,10 @@ sequenceDiagram
     RSvc->>API: REST GET
     API-->>RSvc: メタデータ一覧
     RSvc-->>Detail: 選択肢リスト
-    Detail-->>U: 選択UI表示（現在の値がプリセレクト）
-    U->>Detail: 選択確定
+    Detail->>Selector: 選択UI表示（現在の値がプリセレクト）
+    Selector-->>U: 選択UI表示
+    U->>Selector: 選択確定
+    Selector-->>Detail: 選択結果
     Detail->>ISvc: UpdateIssue(number, changes)
     ISvc->>API: REST PATCH
     alt 成功
@@ -263,9 +273,9 @@ sequenceDiagram
 |-------------|---------|------------|------------|-------|
 | 1.1 | gh extension installでインストール可能 | Main, Build設定 | CLI | - |
 | 1.2 | gh issue-tuiで起動 | Main | CLI | - |
-| 1.3 | gh auth token認証 | GHClient, GHAuth | GitHubAPIClient | - |
-| 1.4 | 未認証時エラー表示 | GHClient | GitHubAPIClient | - |
-| 1.5 | リポジトリ自動検出 | RepoService | RepoResolver | - |
+| 1.3 | gh auth token認証 | GHClient, GHAuth | GitHubClient | - |
+| 1.4 | 未認証時エラー表示 | GHClient | GitHubClient | - |
+| 1.5 | リポジトリ自動検出 | RepoResolver | RepoResolver | - |
 | 1.6 | --repoフラグ指定 | Main | CLI | - |
 | 2.1 | カンバンボード表示 | Board | BoardModel | Issue取得フロー |
 | 2.2 | Project定義カスタムステータスカラム | Board, ProjectService | BoardModel, ProjectService | Issue取得フロー |
@@ -281,21 +291,21 @@ sequenceDiagram
 | 4.3 | コメント一覧表示 | Detail | DetailModel | - |
 | 4.4 | 詳細ビュースクロール | Detail | DetailModel | - |
 | 5.1 | ステータス移動（楽観的UI更新） | App, Board, ProjectService | BoardModel, ProjectService | ステータス移動フロー |
-| 5.2 | タイトル編集 | Editor | EditorModel | Issue編集フロー |
-| 5.3 | 本文編集（$EDITOR） | Editor | EditorModel | Issue編集フロー |
+| 5.2 | タイトル編集 | Editor | Editor | Issue編集フロー |
+| 5.3 | 本文編集（$EDITOR） | Editor | Editor | Issue編集フロー |
 | 5.4 | ラベル編集 | Detail, IssueService | IssueService | Issue編集フロー |
 | 5.5 | アサイニー編集 | Detail, IssueService | IssueService | Issue編集フロー |
 | 5.6 | マイルストーン編集 | Detail, IssueService | IssueService | Issue編集フロー |
 | 5.7 | ステータス移動API失敗時ロールバック | App, Board | BoardModel | ステータス移動フロー |
 | 5.8 | 編集後カンバン画面復帰 | App, Detail, Editor | AppModel | - |
 | 5.9 | ステータス移動成功時reloadBoardData省略 | App | AppModel | ステータス移動フロー |
-| 6.1 | Issue新規作成フォーム | Editor | EditorModel | - |
-| 6.2 | 本文入力（$EDITOR） | Editor | EditorModel | - |
+| 6.1 | Issue新規作成フォーム | Editor | Editor | - |
+| 6.2 | 本文入力（$EDITOR） | Editor | Editor | - |
 | 6.3 | 作成後カンバン更新 | Board, IssueService | IssueService | - |
-| 6.4 | 作成時メタデータ設定 | Editor | EditorModel | - |
-| 7.1 | コメント追加（$EDITOR） | Detail, Editor | EditorModel | - |
+| 6.4 | 作成時メタデータ設定 | Editor | Editor | - |
+| 7.1 | コメント追加（$EDITOR） | Detail, Editor | Editor | - |
 | 7.2 | コメント一覧更新 | Detail | DetailModel | - |
-| 7.3 | コメント投稿失敗時保持 | Editor | EditorModel | - |
+| 7.3 | コメント投稿失敗時保持 | Editor | Editor | - |
 | 8.1 | Vim + 矢印キーナビゲーション | App | KeyMap | - |
 | 8.2 | Enter/Esc操作 | App | KeyMap | - |
 | 8.3 | ヘルプ表示 | Help | HelpModel | - |
@@ -307,36 +317,40 @@ sequenceDiagram
 | 10.1 | 初回起動時Project紐付け確認CLIプロンプト | Main, CLIPrompt | huh.Confirm | 初回起動フロー |
 | 10.2 | Yes選択時Project一覧選択CLIプロンプト | Main, CLIPrompt, ProjectService | huh.Select, ProjectService | 初回起動フロー |
 | 10.3 | No選択時Open/Closed 2カラム表示 | Main, Board | AppModel, BoardModel | 初回起動フロー |
-| 10.4 | 設定ファイル保存 | ConfigService | ConfigService | 初回起動フロー |
-| 10.5 | 次回起動時設定自動読み込み | Main, ConfigService | ConfigService | 初回起動フロー |
+| 10.4 | 設定ファイル保存 | Config Package | config.Save | 初回起動フロー |
+| 10.5 | 次回起動時設定自動読み込み | Main, Config Package | config.Load | 初回起動フロー |
 | 10.6 | --projectフラグ優先 | Main | CLI | - |
 | 10.7 | --configフラグで設定変更 | Main, CLIPrompt | CLI, huh.Confirm, huh.Select | 初回起動フロー |
-| 10.8 | 無効Project時の再選択 | Main, CLIPrompt | ConfigService, ProjectService, huh | 初回起動フロー |
+| 10.8 | 無効Project時の再選択 | Main, CLIPrompt | Config Package, ProjectService, huh | 初回起動フロー |
 | 11.1 | カラム非表示操作 | Board | BoardModel | - |
 | 11.2 | カラム表示復元操作 | Board | BoardModel | - |
 | 11.3 | 非表示カラム数ステータスバー表示 | Board, App | BoardModel, StatusBar | - |
 | 11.4 | 最低1カラム表示維持 | Board | BoardModel | - |
-| 12.1 | 詳細画面ラベルインライン編集 | Detail, RepoService, IssueService | DetailModel, SelectModel | インライン編集フロー |
-| 12.2 | 詳細画面アサイニーインライン編集 | Detail, RepoService, IssueService | DetailModel, SelectModel | インライン編集フロー |
-| 12.3 | 詳細画面マイルストーンインライン編集 | Detail, RepoService, IssueService | DetailModel, SelectModel | インライン編集フロー |
+| 11.5 | カラム非表示設定の永続化 | Board, App, Config Package | BoardModel, config.Save | - |
+| 11.6 | 存在しないカラム名の無視 | Board | BoardModel | - |
+| 12.1 | 詳細画面ラベルインライン編集 | Detail, Selector, RepoService, IssueService | DetailModel, SelectorModel | インライン編集フロー |
+| 12.2 | 詳細画面アサイニーインライン編集 | Detail, Selector, RepoService, IssueService | DetailModel, SelectorModel | インライン編集フロー |
+| 12.3 | 詳細画面マイルストーンインライン編集 | Detail, Selector, RepoService, IssueService | DetailModel, SelectorModel | インライン編集フロー |
 | 12.4 | 編集完了後詳細画面復帰・更新反映 | Detail | DetailModel | インライン編集フロー |
 
 ## Components and Interfaces
 
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies | Contracts |
 |-----------|-------------|--------|--------------|------------------|-----------|
-| CLIPrompt | CLI | TUI起動前のProject紐付け確認・選択 | 10.1-10.3, 10.7-10.8 | ProjectService (P0), ConfigService (P0), huh (P0) | Service |
+| CLIPrompt | CLI | TUI起動前のProject紐付け確認・選択 | 10.1-10.3, 10.7-10.8 | ProjectService (P0), Config Package (P0), huh (P0) | Service |
 | App | UI | トップレベル画面遷移・キーバインド管理・ステータス移動制御 | 5.1, 5.7, 5.8, 5.9, 8.1-8.5, 11.3 | Board, Detail, Editor, Filter, Help (P0) | State |
-| Board | UI | カンバンボード表示・ナビゲーション・アイテム移動 | 2.1-2.5, 3.4, 5.1, 5.7, 9.2, 11.1-11.4 | IssueService (P0), ProjectService (P0), Filter (P1) | State |
-| Detail | UI | Issue詳細表示・プロパティ操作・インライン編集 | 4.1-4.4, 5.4-5.6, 7.1-7.2, 12.1-12.4 | IssueService (P0), RepoService (P1) | State |
+| Board | UI | カンバンボード表示・ナビゲーション・アイテム移動 | 2.1-2.5, 3.4, 5.1, 5.7, 9.2, 11.1-11.6 | IssueService (P0), ProjectService (P0), Filter (P1) | State |
+| Detail | UI | Issue詳細表示・プロパティ操作・インライン編集 | 4.1-4.4, 5.4-5.6, 7.1-7.2, 12.1-12.4 | IssueService (P0), RepoService (P1), Selector (P0) | State |
+| Selector | UI | 汎用マルチ/シングルセレクトUIコンポーネント | 12.1-12.4 | なし | State |
 | Editor | UI | テキスト入力・外部エディタ起動 | 5.2-5.3, 6.1-6.4, 7.1, 7.3 | IssueService (P0) | State |
 | Filter | UI | フィルタ・ソートUI | 3.1-3.3 | RepoService (P1) | State |
 | Help | UI | キーバインドヘルプ表示 | 8.3 | なし | State |
 | IssueService | Domain | Issue CRUD操作の抽象化 | 5.2-5.7, 6.3, 7.2, 9.1, 9.3, 12.1-12.3 | GHClient (P0) | Service |
 | ProjectService | Domain | GitHub Projects V2ステータス管理 | 2.2, 5.1, 10.2 | GHClient (P0) | Service |
-| RepoService | Domain | リポジトリ情報・メタデータ取得 | 1.5, 3.1, 12.1-12.3 | GHClient (P0) | Service |
-| ConfigService | Domain | 設定ファイルの読み書き | 10.4-10.8 | ConfigFile (P0) | Service |
-| GHClient | Infrastructure | GitHub API通信 | 1.3-1.4 | go-gh v2 (P0) | Service |
+| RepoService | Domain | リポジトリメタデータ取得 | 3.1, 12.1-12.3 | GHClient (P0) | Service |
+| RepoResolver | Repository | リポジトリowner/name検出 | 1.5 | git CLI (P0) | Service |
+| Config Package | Repository | 設定ファイルの読み書き | 10.4-10.8, 11.5-11.6 | File I/O (P0) | Service |
+| GHClient | Infrastructure | GitHub API通信 | 1.3-1.4 | net/http (P0) | Service |
 
 ### UI Layer
 
@@ -379,16 +393,23 @@ const (
 
 type AppModel struct {
     currentView    ViewState
+    prevView       ViewState
     board          BoardModel
     detail         DetailModel
-    editor         EditorModel
     filter         FilterModel
     help           HelpModel
     statusMsg      string
     width          int
     height         int
+    issueSvc       *service.IssueService
+    repoSvc        *service.RepoService
+    projectSvc     *service.ProjectService
+    projectNumber  int
+    projectError   string
+    lastEditType   editType
+    repoRoot       string
+    cfg            *config.Config
 }
-```
 
 // ステータス移動の非同期結果メッセージ（楽観的UI更新のロールバック情報を含む）
 type statusMoveMsg struct {
@@ -407,7 +428,7 @@ type statusMoveMsg struct {
 | Field | Detail |
 |-------|--------|
 | Intent | Issue一覧をGitHub Projects V2のカスタムステータスカラムでカンバンボード形式で描画する |
-| Requirements | 2.1, 2.2, 2.3, 2.4, 2.5, 3.4, 5.1, 5.7, 8.6, 9.2, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6 |
+| Requirements | 2.1, 2.2, 2.3, 2.4, 2.5, 3.4, 5.1, 5.7, 9.2, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6 |
 
 **Responsibilities & Constraints**
 - GitHub Projects V2のStatusフィールドのoptionsに基づくN個の動的カラムレイアウトでIssueカードを描画
@@ -419,8 +440,7 @@ type statusMoveMsg struct {
 - カラム表示・非表示の切り替え（11.1, 11.2）。`hiddenCols`マップで管理し、表示カラムのみの仮想インデックスで`activeCol`を制御
 - 非表示カラム数をステータスバー情報として返却（11.3）
 - 最低1カラムの表示を維持するガード条件（11.4）
-- カラム非表示設定の変更時にコールバックで通知し、設定ファイルへの永続化をトリガー（11.5）
-
+- カラム非表示設定の変更時に`wantConfigUpdate`フラグで通知し、設定ファイルへの永続化をトリガー（11.5）
 
 **Dependencies**
 - Inbound: App — 画面遷移で表示 (P0)
@@ -434,23 +454,27 @@ type statusMoveMsg struct {
 
 ```go
 type BoardModel struct {
-    columns      []StatusColumn
-    activeCol    int
-    cursorIndex  map[int]int
-    scrollOffset map[int]int
-    hiddenCols        map[int]bool
-    wantConfigUpdate  bool         // カラム表示設定変更をAppに通知するフラグ
-    loading           bool
-    filterState  FilterState
-    projectInfo  ProjectInfo
-    width        int
-    height       int
+    columns          []StatusColumn
+    allItems         []domain.ProjectItem
+    activeCol        int
+    cursorIndex      map[int]int
+    scrollOffset     map[int]int
+    hiddenCols       map[int]bool
+    wantConfigUpdate bool
+    wantStatusMove   int     // -1=left, 1=right, 0=none
+    wantStatusMsg    string
+    loading          bool
+    filterState      FilterState
+    selectedIssue    *domain.Issue
+    projectInfo      *domain.ProjectInfo
+    width            int
+    height           int
 }
 
 type StatusColumn struct {
     OptionID string
     Name     string
-    Items    []ProjectItem
+    Items    []domain.ProjectItem
 }
 
 type ProjectItem struct {
@@ -467,8 +491,8 @@ type ProjectItem struct {
 - ガード: `len(columns) - len(hiddenCols) <= 1`の場合、非表示操作を拒否しステータスメッセージで通知
 - 楽観的UI更新: `MoveItemToColumn(itemID, fromColIdx, toColIdx)`でアイテムをcolumns[from].Itemsから削除しcolumns[to].Itemsに追加。アイテムのStatusIDも更新する。カーソル位置は移動先カラムの末尾に追従する
 - ロールバック: `RollbackItemMove(itemID, originalStatusID, originalColIdx)`でアイテムを元のカラムに戻しStatusIDを復元する
-- 永続化: `d`/`D`操作時に`wantConfigUpdate = true`を設定。AppModelがフラグを検知し、現在の`hiddenCols`をカラム名リストに変換してConfigServiceで保存
-- 起動時復元: `SetProjectData()`/`SetFallbackIssues()`後にConfigの`HiddenColumns`カラム名リストから`hiddenCols`マップを構築。存在しないカラム名は無視
+- 永続化: `d`/`D`操作時に`wantConfigUpdate = true`を設定。AppModelがフラグを検知し、現在の`hiddenCols`をカラム名リストに変換してconfig.Saveで保存
+- 起動時復元: `SetProjectData()`/`SetFallbackIssues()`後にConfigの`HiddenColumns`カラム名リストから`hiddenCols`マップを構築。存在しないカラム名は無視（11.6）
 
 #### Detail Model
 
@@ -481,7 +505,7 @@ type ProjectItem struct {
 - Issue本文のMarkdownレンダリング（glamour使用）
 - メタデータ（ラベル、アサイニー、マイルストーン、日時）の表示
 - コメント一覧の表示とスクロール
-- ラベル/アサイニー/マイルストーンのインライン選択UI表示（12.1-12.3）
+- ラベル/アサイニー/マイルストーンのインライン選択UI表示（SelectorModelを利用）（12.1-12.3）
 - 選択確定時にIssueServiceを通じてAPIに反映し、詳細画面を更新（12.4）
 - 編集キャンセル時（Esc）は元のIssue詳細表示に戻る
 
@@ -490,6 +514,7 @@ type ProjectItem struct {
 - Outbound: IssueService — プロパティ更新 (P0)
 - Outbound: RepoService — ラベル/コラボレーター/マイルストーン一覧取得 (P1)
 - Outbound: Editor — テキスト編集への遷移 (P1)
+- Outbound: Selector — インライン選択UI (P0)
 
 **Contracts**: State [x]
 
@@ -497,15 +522,23 @@ type ProjectItem struct {
 
 ```go
 type DetailModel struct {
-    issue         Issue
-    comments      []Comment
-    viewport      viewport.Model
-    editingField  EditingField
-    selectModel   SelectModel
-    loading       bool
-    errorMsg      string
-    repoService   RepoService
-    issueService  IssueService
+    issue            *domain.Issue
+    comments         []domain.Comment
+    content          string
+    scroll           int
+    width            int
+    height           int
+    loading          bool
+    errorMsg         string
+    wantEdit         editType
+    editingField     EditingField
+    selector         SelectorModel
+    repoSvc          *service.RepoService
+    issueSvc         *service.IssueService
+    cachedLabels     []domain.Label
+    cachedUsers      []domain.User
+    cachedMilestones []domain.Milestone
+    metadataLoaded   bool
 }
 
 type EditingField int
@@ -516,29 +549,50 @@ const (
     EditingAssignees
     EditingMilestone
 )
+```
 
-type SelectModel struct {
-    items     []SelectItem
-    cursor    int
-    selected  map[int]bool
-    multiSelect bool
-}
+**Implementation Notes**
+- インライン編集: `l`/`a`/`m`キー押下で`editingField`を遷移。RepoServiceからメタデータを非同期取得し、`selector`に選択肢をセット
+- 選択UI: `SelectorModel`はラベル（マルチセレクト）、アサイニー（マルチセレクト）、マイルストーン（シングルセレクト）に対応。`multiSelect`フラグで切り替え
+- 確定: Enterキーで選択を確定し、IssueService.UpdateIssueを呼び出し。成功時はIssueデータを更新して詳細表示に復帰
+- キャンセル: Escキーで`editingField = EditingNone`に戻り、選択UIを閉じる
+- メタデータキャッシュ: セッション中はRepoServiceの結果をキャッシュし（`cachedLabels`/`cachedUsers`/`cachedMilestones`）、同一セッション内の再取得を回避
 
-type SelectItem struct {
+#### Selector Model
+
+| Field | Detail |
+|-------|--------|
+| Intent | 汎用的なマルチ/シングルセレクトUIコンポーネント |
+| Requirements | 12.1, 12.2, 12.3, 12.4 |
+
+**Responsibilities & Constraints**
+- ラベル（マルチセレクト）、アサイニー（マルチセレクト）、マイルストーン（シングルセレクト）に対応
+- j/kまたは↑/↓でカーソル移動、Spaceでトグル、Enterで確定、Escでキャンセル
+- 選択UIの描画（タイトル、アイテム一覧、選択状態のインジケータ）
+
+**Contracts**: State [x]
+
+##### State Management
+
+```go
+type SelectorItem struct {
     ID       string
     Name     string
     Selected bool
 }
+
+type SelectorModel struct {
+    items       []SelectorItem
+    cursor      int
+    multiSelect bool
+    title       string
+    active      bool
+    confirmed   bool
+    cancelled   bool
+}
 ```
 
-**Implementation Notes**
-- インライン編集: `l`/`a`/`m`キー押下で`editingField`を遷移。RepoServiceからメタデータを非同期取得し、`selectModel`に選択肢をセット
-- 選択UI: `SelectModel`はラベル（マルチセレクト）、アサイニー（マルチセレクト）、マイルストーン（シングルセレクト）に対応。`multiSelect`フラグで切り替え
-- 確定: Enterキーで選択を確定し、IssueService.UpdateIssueを呼び出し。成功時はIssueデータを更新して詳細表示に復帰
-- キャンセル: Escキーで`editingField = EditingNone`に戻り、選択UIを閉じる
-- メタデータキャッシュ: セッション中はRepoServiceの結果をキャッシュし、同一セッション内の再取得を回避
-
-#### Editor Model
+#### Editor
 
 | Field | Detail |
 |-------|--------|
@@ -550,6 +604,7 @@ type SelectItem struct {
 - 本文・コメント等の長文は$EDITORでの外部エディタ起動
 - 外部エディタ起動中はBubble Teaのtea.ExecProcess機能を使用
 - 編集失敗時のテキスト保持
+- $EDITORが未設定の場合は`vi`にフォールバック
 
 **Dependencies**
 - Inbound: App, Detail — 編集操作のトリガー (P0)
@@ -560,31 +615,22 @@ type SelectItem struct {
 ##### State Management
 
 ```go
-type EditorMode int
+type editType int
 
 const (
-    EditorInline EditorMode = iota
-    EditorExternal
-)
-
-type EditorModel struct {
-    mode         EditorMode
-    textInput    textinput.Model
-    content      string
-    issueNumber  int
-    editTarget   EditTarget
-    creating     bool
-    savedContent string
-}
-
-type EditTarget int
-
-const (
-    EditTitle EditTarget = iota
-    EditBody
-    EditComment
+    editNone editType = iota
+    editTitle
+    editBody
+    editComment
+    editLabels
+    editAssignees
+    editMilestone
 )
 ```
+
+**Implementation Notes**
+- 外部エディタ起動: 一時ファイルを作成→$EDITORで起動（`tea.ExecProcess`）→内容を読み取り→一時ファイル削除
+- Issue新規作成: タイトル入力（textinput）→本文入力（外部エディタ）→IssueService.CreateIssueで作成→Board更新
 
 #### Filter Model
 
@@ -607,36 +653,33 @@ const (
 ##### State Management
 
 ```go
-type SortField int
+type FilterPane int
 
 const (
-    SortCreated SortField = iota
-    SortUpdated
-    SortComments
-)
-
-type SortDirection int
-
-const (
-    SortDesc SortDirection = iota
-    SortAsc
+    PaneLabels FilterPane = iota
+    PaneAssignees
+    PaneMilestone
+    PaneSort
 )
 
 type FilterState struct {
-    labels      []string
-    assignees   []string
-    milestone   string
-    sortField   SortField
-    sortDir     SortDirection
+    Labels    []string
+    Assignees []string
+    Milestone string
+    SortField string
+    SortDir   string
 }
 
 type FilterModel struct {
-    state        FilterState
-    availLabels  []Label
-    availUsers   []User
-    availMilestones []Milestone
-    activePane   FilterPane
-    cursor       int
+    state           FilterState
+    availLabels     []domain.Label
+    availUsers      []domain.User
+    availMilestones []domain.Milestone
+    activePane      FilterPane
+    cursor          int
+    applied         bool
+    selectedLabels  map[string]bool
+    selectedUsers   map[string]bool
 }
 ```
 
@@ -650,8 +693,8 @@ type FilterModel struct {
 **Contracts**: State [x]
 
 **Implementation Notes**
-- カラム表示・非表示のキーバインド（`d`/`D`）をヘルプ一覧に追加
-- Issue詳細画面のインライン編集キー（`l`/`a`/`m`）をヘルプ一覧に追加
+- カラム表示・非表示のキーバインド（`d`/`D`）をヘルプ一覧に含む
+- Issue詳細画面のインライン編集キー（`l`/`a`/`m`）をヘルプ一覧に含む
 
 ### CLI Layer
 
@@ -667,16 +710,15 @@ type FilterModel struct {
 - `charmbracelet/huh`の`Confirm`コンポーネントで「Bind a GitHub Project?」のYes/No確認を表示（10.1）
 - Yes選択時にProjectService経由でリポジトリのProject一覧を取得し、`huh.Select`で選択肢を表示（10.2）
 - No選択時はProject紐付けなしの状態でTUIを起動（10.3）
-- 選択確定時にConfigService経由で設定ファイルに保存（10.4）
+- 選択確定時にconfig.Save経由で設定ファイルに保存（10.4）
 - `--config`フラグによる再設定時も同じフローを使用（10.7）
 - Project無効時（削除済み等）はエラーメッセージを表示し、同じプロンプトフローにフォールバック（10.8）
-- プロンプトはmain.go内の関数として実装し、Bubble Tea TUIとは完全に分離する
-- `gh repo create`、`gh issue create`等のGitHub CLIと同様のUXを提供する
+- `internal/cli/prompt.go`として実装し、Bubble Tea TUIとは完全に分離する
 
 **Dependencies**
 - Inbound: Main — 初回起動時または--config時に呼び出し (P0)
 - Outbound: ProjectService — Project一覧取得 (P0)
-- Outbound: ConfigService — 設定保存 (P0)
+- Outbound: Config Package — 設定保存 (P0)
 - External: charmbracelet/huh — インラインプロンプトUI (P0)
 
 **Contracts**: Service [x]
@@ -684,24 +726,29 @@ type FilterModel struct {
 ##### Service Interface
 
 ```go
-// promptProjectSelection はTUI起動前にCLIプロンプトでProject選択を実行する。
+// ProjectLister はProject一覧取得の依存インターフェース
+type ProjectLister interface {
+    ListProjects(ctx context.Context) ([]domain.ProjectSummary, error)
+}
+
+// PromptProjectSelection はTUI起動前にCLIプロンプトでProject選択を実行する。
 // 戻り値: 選択されたProject番号（0はProject紐付けなし）
-func promptProjectSelection(
-    projectSvc *service.ProjectService,
+func PromptProjectSelection(
+    lister ProjectLister,
     repoRoot string,
 ) (int, error)
 ```
 
 - Step 1: `huh.NewConfirm().Title("Bind a GitHub Project?")` でYes/No確認
-- Step 2 (Yesの場合): `ProjectService.ListProjects()` でProject一覧取得
+- Step 2 (Yesの場合): `lister.ListProjects()` でProject一覧取得
 - Step 3: `huh.NewSelect().Title("Select a project")` でProject選択
 - Step 4: `config.Save(repoRoot, Config{ProjectNumber: selected})` で設定保存
 - Noの場合: 0を返し、Project紐付けなしでTUIを起動
 
 **Implementation Notes**
 - `huh`はCharm ecosystemの一部であり、Bubble Tea/Lip Glossと一貫したスタイリングを提供
-- プロンプトはaltscreenを使用しないため、選択結果がターミナル履歴に残る（CLIツールの標準的な挙動）
-- ローディング表示: Project一覧取得中は`huh`のSpinnerまたはシンプルなfmt.Printで「Fetching projects...」を表示
+- プロンプトはaltscreenを使用しないため、選択結果がターミナル履歴に残る
+- ProjectListerインターフェースにより、テスト時にProjectService実装をモック可能
 
 ### Domain Layer
 
@@ -715,6 +762,7 @@ func promptProjectSelection(
 **Responsibilities & Constraints**
 - Issue一覧取得（GraphQL、ペジネーション付き）
 - Issue作成・更新（タイトル、本文、ラベル、アサイニー、マイルストーン）
+- Issue Open/Closeの操作
 - コメント取得・追加
 - API失敗時のエラー返却（ロールバックはUI層の責務）
 - ステータス変更はProjectServiceの責務（Projects V2 APIを使用）
@@ -728,22 +776,28 @@ func promptProjectSelection(
 ##### Service Interface
 
 ```go
-type IssueService interface {
-    ListIssues(ctx context.Context, opts ListIssuesOptions) ([]Issue, PageInfo, error)
-    GetIssue(ctx context.Context, number int) (Issue, error)
-    CreateIssue(ctx context.Context, input CreateIssueInput) (Issue, error)
-    UpdateIssue(ctx context.Context, number int, input UpdateIssueInput) (Issue, error)
-    AddComment(ctx context.Context, number int, body string) (Comment, error)
-    ListComments(ctx context.Context, number int) ([]Comment, error)
+type IssueService struct {
+    client github.GitHubClient
+    owner  string
+    repo   string
 }
 
+func (s *IssueService) ListIssues(ctx context.Context, opts ListIssuesOptions) ([]domain.Issue, domain.PageInfo, error)
+func (s *IssueService) GetIssue(ctx context.Context, number int) (domain.Issue, error)
+func (s *IssueService) CreateIssue(ctx context.Context, input CreateIssueInput) (domain.Issue, error)
+func (s *IssueService) UpdateIssue(ctx context.Context, number int, input UpdateIssueInput) (domain.Issue, error)
+func (s *IssueService) CloseIssue(ctx context.Context, number int) error
+func (s *IssueService) ReopenIssue(ctx context.Context, number int) error
+func (s *IssueService) AddComment(ctx context.Context, number int, body string) (domain.Comment, error)
+func (s *IssueService) ListComments(ctx context.Context, number int) ([]domain.Comment, error)
+
 type ListIssuesOptions struct {
-    State     IssueState
+    State     domain.IssueState
     Labels    []string
     Assignee  string
     Milestone string
-    Sort      SortField
-    Direction SortDirection
+    Sort      string
+    Direction string
     PerPage   int
     After     string
 }
@@ -793,36 +847,17 @@ type UpdateIssueInput struct {
 ##### Service Interface
 
 ```go
-type ProjectService interface {
-    ListProjects(ctx context.Context, owner, repo string) ([]ProjectSummary, error)
-    GetProjectFields(ctx context.Context, projectID string) (ProjectInfo, error)
-    GetProjectItems(ctx context.Context, projectID string, cursor string) ([]ProjectItem, PageInfo, error)
-    MoveItemStatus(ctx context.Context, projectID, itemID, fieldID, optionID string) error
-    AddItemToProject(ctx context.Context, projectID, contentID string) (string, error)
+type ProjectService struct {
+    client github.GitHubClient
+    owner  string
+    repo   string
 }
 
-type ProjectSummary struct {
-    ID     string
-    Number int
-    Title  string
-}
-
-type ProjectInfo struct {
-    ID          string
-    Title       string
-    StatusField StatusField
-}
-
-type StatusField struct {
-    ID      string
-    Name    string
-    Options []StatusOption
-}
-
-type StatusOption struct {
-    ID   string
-    Name string
-}
+func (s *ProjectService) ListProjects(ctx context.Context) ([]domain.ProjectSummary, error)
+func (s *ProjectService) GetProjectFields(ctx context.Context, projectNumber int) (domain.ProjectInfo, error)
+func (s *ProjectService) GetProjectItems(ctx context.Context, projectID string, cursor string) ([]domain.ProjectItem, domain.PageInfo, error)
+func (s *ProjectService) MoveItemStatus(ctx context.Context, projectID, itemID, fieldID, optionID string) error
+func (s *ProjectService) AddItemToProject(ctx context.Context, projectID, contentID string) (string, error)
 ```
 
 - Preconditions: ownerとrepoが解決済みであること。ProjectV2が存在すること
@@ -833,11 +868,10 @@ type StatusOption struct {
 
 | Field | Detail |
 |-------|--------|
-| Intent | リポジトリ情報とメタデータ（ラベル、コラボレーター、マイルストーン）の取得 |
-| Requirements | 1.5, 3.1, 12.1, 12.2, 12.3 |
+| Intent | リポジトリのメタデータ（ラベル、コラボレーター、マイルストーン）の取得 |
+| Requirements | 3.1, 12.1, 12.2, 12.3 |
 
 **Responsibilities & Constraints**
-- カレントディレクトリからのリポジトリowner/name自動検出
 - リポジトリのラベル・コラボレーター・マイルストーン一覧取得
 - メタデータはフィルタUI、プロパティ編集UI、Issue詳細インライン編集UIで使用
 
@@ -850,58 +884,81 @@ type StatusOption struct {
 ##### Service Interface
 
 ```go
-type RepoService interface {
-    ResolveRepo() (RepoInfo, error)
-    ListLabels(ctx context.Context) ([]Label, error)
-    ListCollaborators(ctx context.Context) ([]User, error)
-    ListMilestones(ctx context.Context) ([]Milestone, error)
+type RepoService struct {
+    client github.GitHubClient
+    owner  string
+    repo   string
 }
 
-type RepoInfo struct {
-    Owner string
-    Name  string
-    Host  string
-}
+func (s *RepoService) ListLabels(ctx context.Context) ([]domain.Label, error)
+func (s *RepoService) ListCollaborators(ctx context.Context) ([]domain.User, error)
+func (s *RepoService) ListMilestones(ctx context.Context) ([]domain.Milestone, error)
 ```
 
-#### Config Service
+### Repository Layer
+
+#### Repo Resolver
 
 | Field | Detail |
 |-------|--------|
-| Intent | リポジトリ単位の設定ファイル（`.gh-tuissue.json`）の読み書きを管理する |
-| Requirements | 10.4, 10.5, 10.6, 10.7, 10.8 |
+| Intent | リポジトリのowner/nameを`--repo`フラグまたはgitリモートURLから解決する |
+| Requirements | 1.5, 1.6 |
 
 **Responsibilities & Constraints**
-- リポジトリルートの`.gh-tuissue.json`の読み込み・書き込み
-- 設定ファイルが存在しない場合はnilを返す（初回起動の判定に使用）
-- JSONパースエラー時はデフォルト値にフォールバックし、警告を返す
-- `--project`フラグの値は設定ファイルより優先されるが、ConfigServiceは設定ファイルの上書きを行わない（10.6の制約はmain.goで制御）
-
-**Dependencies**
-- Inbound: Main — 起動時の設定読み込み (P0)
-- Inbound: CLIPrompt — 設定保存 (P0)
-- Outbound: ConfigFile — ファイルI/O (P0)
+- `--repo owner/name`フラグのパース（ParseRepoFlag）
+- gitリモートURLのパース（HTTPS、SSH両対応）（ParseGitRemoteURL）
+- カレントディレクトリからのgit remote origin検出（DetectFromGitRemote）
+- フラグ優先でリモート検出にフォールバック（Resolve）
 
 **Contracts**: Service [x]
 
 ##### Service Interface
 
 ```go
-type ConfigService interface {
-    LoadConfig(repoRoot string) (*Config, error)
-    SaveConfig(repoRoot string, config Config) error
+type RepoInfo struct {
+    Owner string
+    Name  string
+    Host  string
 }
+
+func ParseRepoFlag(flag string) (RepoInfo, error)
+func ParseGitRemoteURL(rawURL string) (RepoInfo, error)
+func DetectFromGitRemote() (RepoInfo, error)
+func Resolve(repoFlag string) (RepoInfo, error)
+```
+
+#### Config Package
+
+| Field | Detail |
+|-------|--------|
+| Intent | リポジトリ単位の設定ファイル（`.gh-tuissue.json`）の読み書きを管理する |
+| Requirements | 10.4, 10.5, 10.6, 10.7, 10.8, 11.5, 11.6 |
+
+**Responsibilities & Constraints**
+- リポジトリルートの`.gh-tuissue.json`の読み込み・書き込み
+- 設定ファイルが存在しない場合はnilを返す（初回起動の判定に使用）
+- JSONパースエラー時はエラーを返す
+- `--project`フラグの値は設定ファイルより優先されるが、Config Packageは設定ファイルの上書きを行わない（10.6の制約はmain.goで制御）
+
+**Contracts**: Service [x]
+
+##### Service Interface
+
+```go
+const FileName = ".gh-tuissue.json"
 
 type Config struct {
     ProjectNumber int      `json:"project_number,omitempty"`
     HiddenColumns []string `json:"hidden_columns,omitempty"`
 }
+
+func Load(repoRoot string) (*Config, error)
+func Save(repoRoot string, cfg Config) error
 ```
 
 - Preconditions: repoRootが有効なディレクトリパスであること
-- Postconditions: SaveConfig完了後、設定ファイルがディスクに書き込まれる
-- Invariants: LoadConfigは設定ファイルが存在しない場合nil, nilを返す。JSONパースエラー時はnil, errorを返す
-- HiddenColumnsにはカラム名（ステータス名）のリストを保持する。存在しないカラム名は起動時に無視される
+- Postconditions: Save完了後、設定ファイルがディスクに書き込まれる
+- Invariants: Loadは設定ファイルが存在しない場合nil, nilを返す。JSONパースエラー時はnil, errorを返す。HiddenColumnsにはカラム名（ステータス名）のリストを保持する。存在しないカラム名は起動時に無視される
 
 ### Infrastructure Layer
 
@@ -909,18 +966,20 @@ type Config struct {
 
 | Field | Detail |
 |-------|--------|
-| Intent | go-gh v2を利用したGitHub REST/GraphQL APIへの認証済みアクセス |
+| Intent | net/httpベースの認証済みGitHub REST/GraphQL APIクライアント |
 | Requirements | 1.3, 1.4 |
 
 **Responsibilities & Constraints**
-- go-gh v2の`api.DefaultGraphQLClient()`と`api.DefaultRESTClient()`をラップ
-- GraphQLクエリのビルドと実行
-- RESTリクエストの実行
+- Raw HTTPクライアントによるBearerトークン認証
+- トークン解決: GH_TOKEN → GITHUB_TOKEN → `gh auth token`コマンドの優先順で取得
+- GraphQLクエリのビルドと`/graphql`エンドポイントへのPOST実行
+- RESTリクエスト（GET/PATCH/POST）の実行
+- HTTPステータスコードからdomain.ErrorCodeへの分類（401→ErrAuth, 403→ErrPermission, 404→ErrNotFound等）
 - 認証エラーの検出とユーザーフレンドリーなエラーメッセージ生成
 
 **Dependencies**
 - Inbound: IssueService, ProjectService, RepoService — API実行 (P0)
-- External: go-gh v2 — 認証・HTTPクライアント (P0)
+- External: net/http — HTTPクライアント (P0)
 - External: GitHub API — REST v3 / GraphQL v4 (P0)
 
 **Contracts**: Service [x]
@@ -934,11 +993,22 @@ type GitHubClient interface {
     RESTPatch(ctx context.Context, path string, body interface{}, result interface{}) error
     RESTPost(ctx context.Context, path string, body interface{}, result interface{}) error
 }
+
+type Client struct {
+    httpClient *http.Client
+    baseURL    string
+    token      string
+}
+
+func NewClient() (*Client, error)
 ```
 
-- Preconditions: gh auth loginが完了していること
+- Preconditions: GH_TOKEN、GITHUB_TOKEN環境変数、または`gh auth token`でトークンが利用可能であること
 - Postconditions: API応答がresultにデシリアライズされる
 - Invariants: 未認証時はActionableなエラーメッセージ（`gh auth login`の実行を促す）を返す
+
+**Implementation Notes**
+- テスト用に`client_testing.go`でモッククライアント（`MockClient`）を提供。GitHubClientインターフェースに準拠し、各メソッドの戻り値をフィールドで設定可能
 
 ## Data Models
 
@@ -995,6 +1065,7 @@ erDiagram
     }
     Config {
         int ProjectNumber
+        list HiddenColumns
     }
 
     ProjectV2 ||--|| StatusField : has
@@ -1010,7 +1081,7 @@ erDiagram
     Issue }o--|| User : author
 ```
 
-**Entities and Types**:
+**Entities and Types** (`internal/domain/models.go`):
 
 ```go
 type IssueState string
@@ -1064,11 +1135,6 @@ type Comment struct {
 type PageInfo struct {
     HasNextPage bool
     EndCursor   string
-}
-
-type Config struct {
-    ProjectNumber int      `json:"project_number,omitempty"`
-    HiddenColumns []string `json:"hidden_columns,omitempty"`
 }
 ```
 
@@ -1205,14 +1271,15 @@ query ListIssues($owner: String!, $name: String!, $first: Int!, $after: String, 
 
 ```json
 {
-  "project_number": 1
+  "project_number": 1,
+  "hidden_columns": ["Done"]
 }
 ```
 
 ## Error Handling
 
 ### Error Strategy
-- GitHub APIエラーはドメインエラー型にラップしてUI層に返す
+- GitHub APIエラーはdomain.AppError型にラップしてUI層に返す
 - UI層はエラーメッセージをステータスバーに表示し、操作前の状態を維持する
 - 認証エラーは専用メッセージで`gh auth login`を促す
 - 設定ファイルのエラーはフォールバック動作で対処する
@@ -1267,21 +1334,21 @@ const (
 - IssueServiceの各メソッド（フィルタ適用、ソート、ペジネーション）
 - ProjectServiceのステータスフィールド取得・ステータス移動ロジック
 - FilterStateの適用ロジック
-- RepoServiceのリポジトリ自動検出ロジック
+- RepoResolverのリポジトリ自動検出ロジック（ParseRepoFlag、ParseGitRemoteURL、DetectFromGitRemote）
 - AppErrorのエラーコード分類ロジック
 - BoardModelの動的カラム構築・隣接カラム解決ロジック
 - BoardModelのMoveItemToColumn・RollbackItemMoveロジック（アイテムの移動・復元、StatusID更新、カーソル追従）
 - BoardModelのカラム表示・非表示ロジック（hiddenCols管理、仮想インデックス変換、最低1カラムガード）
-- ConfigServiceの設定ファイル読み書き（存在しない場合、パースエラー、正常読み書き）
+- Config Packageの設定ファイル読み書き（存在しない場合、パースエラー、正常読み書き）
 - DetailModelのインライン編集状態遷移（EditingNone→EditingLabels→確定/キャンセル→EditingNone）
-- SelectModelの選択ロジック（マルチセレクト、シングルセレクト、プリセレクト）
+- SelectorModelの選択ロジック（マルチセレクト、シングルセレクト、プリセレクト）
 
 ### Integration Tests
-- GHClientを通じた実際のGraphQLクエリ実行（テストリポジトリ使用）
+- GitHubClientを通じた実際のGraphQLクエリ実行（テストリポジトリ使用）
 - Projects V2 APIを通じたステータスフィールド取得・ステータス移動
 - Issue作成→更新のライフサイクルフロー
 - 外部エディタ起動・内容取得のフロー
-- ConfigServiceの設定ファイル永続化（書き込み→読み込みの往復テスト）
+- Config Packageの設定ファイル永続化（書き込み→読み込みの往復テスト）
 - DetailModelからのインライン編集→API更新→画面反映フロー
 
 ### E2E/UI Tests

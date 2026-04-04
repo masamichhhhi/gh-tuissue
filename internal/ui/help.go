@@ -64,7 +64,6 @@ func (m HelpModel) View() string {
 			title: "Global",
 			keys: [][]string{
 				{"?", "Show this help"},
-				{"q", "Quit"},
 				{"Esc", "Go back"},
 			},
 		},

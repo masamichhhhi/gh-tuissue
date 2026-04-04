@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
 )
@@ -613,10 +614,7 @@ func renderCard(issue domain.Issue, selected bool, width int) string {
 	}
 
 	number := dimStyle.Render(fmt.Sprintf("#%d", issue.Number))
-	title := issue.Title
-	if len(title) > width-8 {
-		title = title[:width-11] + "..."
-	}
+	title := truncateText(issue.Title, width-8)
 
 	var labels []string
 	for _, l := range issue.Labels {
@@ -640,6 +638,13 @@ func renderCard(issue domain.Issue, selected bool, width int) string {
 	}
 
 	return style.Render(strings.Join(lines, "\n"))
+}
+
+func truncateText(s string, maxWidth int) string {
+	if runewidth.StringWidth(s) > maxWidth {
+		return runewidth.Truncate(s, maxWidth-3, "...")
+	}
+	return s
 }
 
 func (m BoardModel) hasActiveFilter() bool {

@@ -72,7 +72,6 @@ gh tuissue --version
 - `r`: refresh issues
 - `n`: create a new issue
 - `?`: show help
-- `q`: quit
 
 ### Detail view
 

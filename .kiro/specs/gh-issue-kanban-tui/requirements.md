@@ -99,9 +99,8 @@ GitHub CLI拡張機能（`gh extension`）として開発する、GitHub Issue�
 1. The gh-tuissue shall Vimライクなキーバインド（h/j/k/l）および矢印キー（←/↓/↑/→）でカンバンカラム間・Issue間のカーソル移動をサポートする
 2. The gh-tuissue shall Enterキーで選択、Escキーで戻る操作をサポートする
 3. The gh-tuissue shall `?`キーでキーバインドヘルプを表示する
-4. When ユーザーが`q`キーでアプリケーションを終了した時, the gh-tuissue shall ターミナルの画面をクリアし、TUIの表示が残らないようにする
+4. When ユーザーが`Ctrl+C`でアプリケーションを終了した時, the gh-tuissue shall ターミナルの画面をクリアし、TUIの表示が残らないようにする
 5. The gh-tuissue shall 各画面の下部にコンテキストに応じたキーバインドヒントを表示する
-
 
 ### Requirement 9: データ同期・リフレッシュ
 

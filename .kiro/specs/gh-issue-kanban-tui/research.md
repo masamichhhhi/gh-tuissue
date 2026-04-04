@@ -35,12 +35,12 @@
 - **Sources Consulted**: GitHub Docs, go-gh v2 pkg.go.dev, cli/gh-extension-precompile
 - **Findings**:
   - `gh extension create --precompiled=go`でプロジェクト初期化
-  - go-gh v2（`github.com/cli/go-gh/v2`）がGitHub CLI統合の公式ライブラリ
-  - `api.DefaultRESTClient()` / `api.DefaultGraphQLClient()` で認証済みAPIクライアント取得
-  - 認証は自動的にGH_TOKEN/gh auth tokenを利用、手動管理不要
+  - go-gh v2（`github.com/cli/go-gh/v2`）がGitHub CLI統合の公式ライブラリとして調査
+  - **実装時の決定**: go-gh v2ではなくRaw HTTPクライアント（net/http）を採用。理由: (1) 依存を最小化しバイナリサイズを削減、(2) GraphQLクエリの直接制御が容易、(3) トークン解決はGH_TOKEN/GITHUB_TOKEN環境変数または`gh auth token`コマンドで十分実現可能
+  - トークン解決の優先順位: GH_TOKEN → GITHUB_TOKEN → `exec.Command("gh", "auth", "token")`
   - リリース自動化: cli/gh-extension-precompile GitHub Action
   - バイナリ命名規則: `gh-tuissue-<os>-<arch>[.exe]`
-- **Implications**: go-ghライブラリで認証とAPIアクセスを完全に抽象化できるため、認証実装のコストが最小
+- **Implications**: Raw HTTPクライアントで認証とAPIアクセスを実装。外部依存なしでGitHub CLI認証との連携を実現
 
 ### GitHub Issues API選定
 
@@ -205,12 +205,15 @@
 - **Trade-offs**: 2種類のAPIクライアント管理が必要だが、go-ghが両方を提供するため実装コストは低い
 - **Follow-up**: GraphQLクエリの複雑さがrate limitポイントに与える影響を実装時に検証
 
-### Decision: GitHub CLI統合 — go-gh v2
+### Decision: GitHub API統合 — Raw HTTPクライアント
 
 - **Context**: gh extension としての認証・API統合方式
-- **Selected Approach**: go-gh v2ライブラリによる完全統合
-- **Rationale**: 認証の自動解決、REST/GraphQLクライアントの提供、gh公式サポート
-- **Trade-offs**: go-ghへの依存だが、gh extensionとして公式推奨されているため問題なし
+- **Alternatives Considered**:
+  1. go-gh v2ライブラリ — 公式推奨、認証自動解決、REST/GraphQLクライアント提供
+  2. Raw HTTPクライアント（net/http） — 外部依存なし、直接制御可能
+- **Selected Approach**: Raw HTTPクライアント（net/http）+ 手動トークン解決
+- **Rationale**: 外部依存の最小化、GraphQLクエリの直接制御、バイナリサイズの削減。トークン解決はGH_TOKEN/GITHUB_TOKEN環境変数→`gh auth token`コマンドの3段階フォールバックで実装し、go-gh v2と同等の認証体験を提供
+- **Trade-offs**: 認証・エラーハンドリング・HTTPクライアント構築を自前実装する必要があるが、コード量は管理可能な範囲
 
 ### Decision: カンバンカラム — GitHub Projects V2ステータスベース
 
