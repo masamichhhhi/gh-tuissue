@@ -46,6 +46,7 @@ type DetailModel struct {
 	loading  bool
 	errorMsg string
 	wantEdit editType
+	dirty    bool
 
 	// Inline editing
 	editingField EditingField
@@ -79,6 +80,7 @@ func (m *DetailModel) SetIssue(issue domain.Issue) {
 	m.content = ""
 	m.errorMsg = ""
 	m.editingField = EditingNone
+	m.dirty = false
 	m.renderContent()
 }
 
@@ -173,8 +175,11 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		case inlineEditMetadataLoadedMsg:
+			// Allow metadata to be processed below
+		default:
+			return m, nil
 		}
-		return m, nil
 	}
 
 	switch msg := msg.(type) {
@@ -222,6 +227,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		} else {
 			// Update the issue in place
 			m.issue = &msg.issue
+			m.dirty = true
 			m.renderContent()
 		}
 	}

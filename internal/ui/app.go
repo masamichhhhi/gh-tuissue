@@ -316,6 +316,10 @@ func (m AppModel) handleEscape() (tea.Model, tea.Cmd) {
 		m.currentView = m.prevView
 	case ViewDetail:
 		m.currentView = ViewBoard
+		if m.detail.dirty {
+			m.detail.dirty = false
+			return m, m.reloadBoardData()
+		}
 	case ViewBoard:
 		return m, tea.Quit
 	}
