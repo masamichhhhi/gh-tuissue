@@ -300,6 +300,14 @@ func (m *BoardModel) MoveItemToColumn(itemID string, fromColIdx, toColIdx int) b
 	movedItem := srcItems[foundIdx]
 	m.columns[fromColIdx].Items = append(srcItems[:foundIdx], srcItems[foundIdx+1:]...)
 
+	// Adjust source column cursor so it doesn't point past the end
+	newLen := len(m.columns[fromColIdx].Items)
+	if newLen == 0 {
+		m.cursorIndex[fromColIdx] = 0
+	} else if m.cursorIndex[fromColIdx] >= newLen {
+		m.cursorIndex[fromColIdx] = newLen - 1
+	}
+
 	// Update StatusID to target column's OptionID
 	movedItem.StatusID = m.columns[toColIdx].OptionID
 
@@ -335,6 +343,14 @@ func (m *BoardModel) RollbackItemMove(itemID string, originalStatusID string, or
 			if item.ItemID == itemID {
 				// Remove from current column
 				m.columns[colIdx].Items = append(items[:i], items[i+1:]...)
+
+				// Adjust removed column cursor
+				removedLen := len(m.columns[colIdx].Items)
+				if removedLen == 0 {
+					m.cursorIndex[colIdx] = 0
+				} else if m.cursorIndex[colIdx] >= removedLen {
+					m.cursorIndex[colIdx] = removedLen - 1
+				}
 
 				// Restore StatusID and add to original column
 				item.StatusID = originalStatusID
@@ -378,7 +394,7 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 	case tea.KeyPressMsg:
 		items := m.columnItems(m.activeCol)
 		switch {
-		case (msg.Code == 'h' && !msg.Mod.Contains(tea.ModShift)) || msg.Code == tea.KeyLeft:
+		case (msg.Code == 'h' || msg.Code == tea.KeyLeft) && !msg.Mod.Contains(tea.ModShift):
 			// Navigate to the previous visible column
 			for i := m.activeCol - 1; i >= 0; i-- {
 				if !m.hiddenCols[i] {
@@ -386,7 +402,7 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 					break
 				}
 			}
-		case (msg.Code == 'l' && !msg.Mod.Contains(tea.ModShift)) || msg.Code == tea.KeyRight:
+		case (msg.Code == 'l' || msg.Code == tea.KeyRight) && !msg.Mod.Contains(tea.ModShift):
 			// Navigate to the next visible column
 			for i := m.activeCol + 1; i < len(m.columns); i++ {
 				if !m.hiddenCols[i] {
@@ -412,10 +428,10 @@ func (m BoardModel) Update(msg tea.Msg) (BoardModel, tea.Cmd) {
 					m.selectedIssue = &selected
 				}
 			}
-		case msg.Code == 'h' && msg.Mod.Contains(tea.ModShift):
+		case (msg.Code == 'h' || msg.Code == tea.KeyLeft) && msg.Mod.Contains(tea.ModShift):
 			// Move status left
 			m.wantStatusMove = -1
-		case msg.Code == 'l' && msg.Mod.Contains(tea.ModShift):
+		case (msg.Code == 'l' || msg.Code == tea.KeyRight) && msg.Mod.Contains(tea.ModShift):
 			// Move status right
 			m.wantStatusMove = 1
 		case msg.Code == 'd' && !msg.Mod.Contains(tea.ModShift):
