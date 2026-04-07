@@ -5,6 +5,20 @@
 
 `gh-tuissue` is a GitHub CLI extension that provides a TUI (Text User Interface) for browsing and updating repository issues from the terminal. It offers a kanban-style view backed by GitHub Issues and, when configured, GitHub Projects columns.
 
+## Installation
+
+Install as a GitHub CLI extension:
+
+```bash
+gh extension install masamichhhhi/gh-tuissue
+```
+
+Update later with:
+
+```bash
+gh extension upgrade gh-tuissue
+```
+
 ## Features
 
 - Browse issues in a terminal UI
@@ -20,22 +34,8 @@
 ## Requirements
 
 - `gh` CLI installed and authenticated
-- Go `1.25.0` or newer for local development
 - Access to the target GitHub repository and, if used, its GitHub Project
 
-## Installation
-
-Install as a GitHub CLI extension:
-
-```bash
-gh extension install masamichhhhi/gh-tuissue
-```
-
-Update later with:
-
-```bash
-gh extension upgrade gh-tuissue
-```
 
 ## Usage
 
@@ -103,21 +103,6 @@ gh tuissue --version
 - `Space`: toggle selection
 - `Enter`: apply filters
 - `Esc`: cancel
-
-## Development
-
-Clone the repository and run the standard Go checks:
-
-```bash
-go test ./...
-go build ./...
-```
-
-Build a local binary:
-
-```bash
-go build -o gh-tuissue .
-```
 
 ## Contributing
 
