@@ -1,7 +1,9 @@
 # gh-tuissue
 
-`gh-tuissue` is a GitHub CLI extension that provides a TUI (Text User Interface) for browsing and updating repository issues from the terminal. It offers a kanban-style view backed by GitHub Issues and, when configured, GitHub Projects columns.
+![tuissue-demo](./demo.gif)
 
+
+`gh-tuissue` is a GitHub CLI extension that provides a TUI (Text User Interface) for browsing and updating repository issues from the terminal. It offers a kanban-style view backed by GitHub Issues and, when configured, GitHub Projects columns.
 
 ## Features
 
