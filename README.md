@@ -1,6 +1,7 @@
 # gh-tuissue
 
-`gh-tuissue` is a GitHub CLI extension for browsing and updating repository issues from the terminal. It provides a kanban-style view backed by GitHub Issues and, when configured, GitHub Projects columns.
+`gh-tuissue` is a GitHub CLI extension that provides a TUI (Text User Interface) for browsing and updating repository issues from the terminal. It offers a kanban-style view backed by GitHub Issues and, when configured, GitHub Projects columns.
+
 
 ## Features
 
@@ -58,24 +59,32 @@ gh tuissue --version
 
 - `--repo`, `-R`: repository in `owner/name` format. If omitted, `origin` is used.
 - `--project`, `-p`: GitHub Project number used to derive kanban columns.
+- `--config`: re-select the GitHub Project binding.
 - `--version`: print version and exit.
 
 ## Keyboard shortcuts
+
+### Global
+
+- `Ctrl+C`: quit
+- `Esc`: back (on board view, quit)
+- `?`: show help
 
 ### Board view
 
 - `h` / `l` / `←` / `→`: switch column
 - `j` / `k` / `↑` / `↓`: move cursor
-- `H` / `L`: move issue status left or right
+- `H` / `L` / `Shift+←` / `Shift+→`: move issue status left or right
+- `d`: hide current column
+- `D`: show all hidden columns
 - `Enter`: open issue detail
 - `f`: open filter panel
 - `r`: refresh issues
 - `n`: create a new issue
-- `?`: show help
 
 ### Detail view
 
-- `j` / `k` / `↑` / `↓`: scroll
+- `j` / `k`: scroll
 - `s`: toggle open or closed status
 - `e`: edit body with `$EDITOR`
 - `t`: edit title
@@ -87,7 +96,7 @@ gh tuissue --version
 
 ### Filter view
 
-- `j` / `k` / `↑` / `↓`: move cursor
+- `j` / `k`: move cursor
 - `Tab`: switch pane
 - `Space`: toggle selection
 - `Enter`: apply filters
