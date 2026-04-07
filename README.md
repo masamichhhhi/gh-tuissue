@@ -86,7 +86,7 @@ gh tuissue --version
 
 ### Detail view
 
-- `j` / `k`: scroll
+- `j` / `k` / `↑` / `↓`: scroll
 - `s`: toggle open or closed status
 - `e`: edit body with `$EDITOR`
 - `t`: edit title
@@ -98,7 +98,7 @@ gh tuissue --version
 
 ### Filter view
 
-- `j` / `k`: move cursor
+- `j` / `k` / `↑` / `↓`: move cursor
 - `Tab`: switch pane
 - `Space`: toggle selection
 - `Enter`: apply filters
