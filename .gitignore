@@ -22,4 +22,5 @@ vendor/
 # Local AI and helper files
 .claude/
 .kiro/
+.serena/
 CLAUDE.local.md
