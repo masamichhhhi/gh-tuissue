@@ -23,4 +23,5 @@ vendor/
 # Local AI and helper files
 fix.md
 oss-release-plan.md
-.claude/worktrees/
+.claude/
+.kiro/
