@@ -451,14 +451,26 @@ func (m AppModel) handleNewIssue(content string) (tea.Model, tea.Cmd) {
 	}
 
 	svc := m.issueSvc
+	projectSvc := m.projectSvc
+	var projectID string
+	if m.board.projectInfo != nil {
+		projectID = m.board.projectInfo.ID
+	}
+
 	return m, func() tea.Msg {
-		_, err := svc.CreateIssue(context.Background(), service.CreateIssueInput{
+		issue, err := svc.CreateIssue(context.Background(), service.CreateIssueInput{
 			Title: title,
 			Body:  body,
 		})
 		if err != nil {
 			return issueUpdatedMsg{err: err}
 		}
+
+		// Add the new issue to the project if project is configured
+		if projectID != "" && projectSvc != nil && issue.NodeID != "" {
+			_, _ = projectSvc.AddItemToProject(context.Background(), projectID, issue.NodeID)
+		}
+
 		return issueUpdatedMsg{err: nil}
 	}
 }
