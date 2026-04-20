@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 
@@ -23,21 +24,42 @@ func launchEditor(initialContent string) tea.Cmd {
 		}
 	}
 	tmpPath := tmpFile.Name()
+	cleanupWithError := func(baseErr error) tea.Msg {
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			baseErr = errors.Join(baseErr, removeErr)
+		}
+		return editorResultMsg{err: baseErr}
+	}
 
 	if initialContent != "" {
-		tmpFile.WriteString(initialContent)
+		if _, err := tmpFile.WriteString(initialContent); err != nil {
+			if closeErr := tmpFile.Close(); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
+			return func() tea.Msg {
+				return cleanupWithError(err)
+			}
+		}
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return func() tea.Msg {
+			return cleanupWithError(err)
+		}
+	}
 
 	c := exec.Command(editor, tmpPath)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
-			os.Remove(tmpPath)
-			return editorResultMsg{err: err}
+			return cleanupWithError(err)
 		}
 
 		content, readErr := os.ReadFile(tmpPath)
-		os.Remove(tmpPath)
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			if readErr != nil {
+				return editorResultMsg{err: errors.Join(readErr, removeErr)}
+			}
+			return editorResultMsg{err: removeErr}
+		}
 		if readErr != nil {
 			return editorResultMsg{err: readErr}
 		}

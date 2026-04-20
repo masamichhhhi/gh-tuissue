@@ -18,7 +18,9 @@ func TestRepoService_ListLabels(t *testing.T) {
 			{"name": "enhancement", "color": "a2eeef", "description": "New feature"},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -50,7 +52,9 @@ func TestRepoService_ListCollaborators(t *testing.T) {
 			{"login": "user2", "name": "User Two"},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -79,7 +83,9 @@ func TestRepoService_ListMilestones(t *testing.T) {
 			{"number": 2, "title": "v2.0", "state": "open", "due_on": "2026-06-01T00:00:00Z"},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -107,7 +113,9 @@ func TestRepoService_ListMilestones(t *testing.T) {
 func TestRepoService_ListLabels_Empty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]interface{}{})
+		if err := json.NewEncoder(w).Encode([]interface{}{}); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 

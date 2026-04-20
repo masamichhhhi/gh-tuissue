@@ -25,9 +25,11 @@ func TestClient_RESTGet(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]interface{}{
+		if err := json.NewEncoder(w).Encode([]map[string]interface{}{
 			{"number": 1, "title": "issue1"},
-		})
+		}); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -48,12 +50,16 @@ func TestClient_RESTPost(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		var body map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("Decode failed: %v", err)
+		}
 		if body["title"] != "new issue" {
 			t.Errorf("unexpected body: %+v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"number": 42})
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"number": 42}); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -75,7 +81,9 @@ func TestClient_RESTPatch(t *testing.T) {
 			t.Errorf("expected PATCH, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"state": "closed"})
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"state": "closed"}); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -91,7 +99,9 @@ func TestClient_RESTPatch(t *testing.T) {
 func TestClient_RESTGet_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"message":"internal error"}`))
+		if _, err := w.Write([]byte(`{"message":"internal error"}`)); err != nil {
+			t.Errorf("Write failed: %v", err)
+		}
 	}))
 	defer server.Close()
 

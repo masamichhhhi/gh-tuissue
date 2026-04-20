@@ -45,7 +45,7 @@ func NewClient() (*Client, error) {
 	}, nil
 }
 
-func (c *Client) doREST(ctx context.Context, method, path string, body interface{}, result interface{}) error {
+func (c *Client) doREST(ctx context.Context, method, path string, body interface{}, result interface{}) (err error) {
 	url := c.baseURL + "/" + path
 
 	var reqBody io.Reader
@@ -73,7 +73,11 @@ func (c *Client) doREST(ctx context.Context, method, path string, body interface
 	if err != nil {
 		return classifyError(fmt.Errorf("request failed: %w", err))
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close response body: %w", closeErr)
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

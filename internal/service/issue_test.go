@@ -19,7 +19,9 @@ func newTestClient(server *httptest.Server) gh.GitHubClient {
 func TestIssueService_ListIssues(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var reqBody map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&reqBody)
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Errorf("Decode failed: %v", err)
+		}
 		query, _ := reqBody["query"].(string)
 		if !strings.Contains(query, "issues") {
 			t.Errorf("expected GraphQL query to contain 'issues', got: %s", query)
@@ -66,7 +68,9 @@ func TestIssueService_ListIssues(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -101,8 +105,8 @@ func TestIssueService_ListIssues(t *testing.T) {
 	if issues[0].Milestone == nil || issues[0].Milestone.Title != "v1.0" {
 		t.Errorf("expected milestone 'v1.0', got %+v", issues[0].Milestone)
 	}
-	if !pageInfo.HasNextPage {
-		// This is fine — our test data says false
+	if pageInfo.HasNextPage {
+		t.Error("expected HasNextPage to be false")
 	}
 	if pageInfo.EndCursor != "abc123" {
 		t.Errorf("expected cursor 'abc123', got %q", pageInfo.EndCursor)
@@ -118,7 +122,9 @@ func TestIssueService_CreateIssue(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 		var body map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("Decode failed: %v", err)
+		}
 		if body["title"] != "New Issue" {
 			t.Errorf("expected title 'New Issue', got %v", body["title"])
 		}
@@ -137,7 +143,9 @@ func TestIssueService_CreateIssue(t *testing.T) {
 			"milestone":  nil,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -181,7 +189,9 @@ func TestIssueService_UpdateIssue(t *testing.T) {
 			"milestone":  nil,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -203,7 +213,9 @@ func TestIssueService_UpdateIssue(t *testing.T) {
 func TestIssueService_CloseAndReopenIssue(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("Decode failed: %v", err)
+		}
 
 		state := body["state"].(string)
 		resp := map[string]interface{}{
@@ -220,7 +232,9 @@ func TestIssueService_CloseAndReopenIssue(t *testing.T) {
 			"milestone":  nil,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -256,7 +270,9 @@ func TestIssueService_AddComment(t *testing.T) {
 			"user":       map[string]interface{}{"login": "commenter"},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -292,7 +308,9 @@ func TestIssueService_ListComments(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("Encode failed: %v", err)
+		}
 	}))
 	defer server.Close()
 

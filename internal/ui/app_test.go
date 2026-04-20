@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
 )
 
@@ -189,16 +188,12 @@ func TestAppModel_StatusMoveNoProject(t *testing.T) {
 	}
 }
 
-func ptrProjectInfo(info domain.ProjectInfo) *domain.ProjectInfo {
-	return &info
-}
-
 func TestAppModel_ProjectDataMsg(t *testing.T) {
 	app := NewAppModel(nil, nil, nil, 1, "", nil)
 	app.board.loading = true
 
 	msg := projectDataMsg{
-		info: sampleProjectInfo(),
+		info:  sampleProjectInfo(),
 		items: sampleProjectItems(),
 	}
 	updated, _ := app.Update(msg)
