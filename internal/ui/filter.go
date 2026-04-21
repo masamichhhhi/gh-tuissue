@@ -80,12 +80,12 @@ func (m FilterModel) Update(msg tea.Msg) (FilterModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.Code {
-		case 'j':
+		case 'j', tea.KeyDown:
 			max := m.currentListLen()
 			if m.cursor < max-1 {
 				m.cursor++
 			}
-		case 'k':
+		case 'k', tea.KeyUp:
 			if m.cursor > 0 {
 				m.cursor--
 			}

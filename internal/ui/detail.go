@@ -185,9 +185,9 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.Code {
-		case 'j':
+		case 'j', tea.KeyDown:
 			m.scroll++
-		case 'k':
+		case 'k', tea.KeyUp:
 			if m.scroll > 0 {
 				m.scroll--
 			}

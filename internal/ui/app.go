@@ -199,7 +199,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch m.currentView {
 	case ViewBoard:
-		var boardMsg tea.Msg = msg
+		boardMsg := msg
 		m.board, cmd = m.board.Update(boardMsg)
 		if m.board.wantStatusMsg != "" {
 			m.statusMsg = m.board.wantStatusMsg

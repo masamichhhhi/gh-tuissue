@@ -25,19 +25,30 @@ func launchEditor(initialContent string) tea.Cmd {
 	tmpPath := tmpFile.Name()
 
 	if initialContent != "" {
-		tmpFile.WriteString(initialContent)
+		if _, err := tmpFile.WriteString(initialContent); err != nil {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+			return func() tea.Msg {
+				return editorResultMsg{err: err}
+			}
+		}
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return func() tea.Msg {
+			return editorResultMsg{err: err}
+		}
+	}
 
 	c := exec.Command(editor, tmpPath)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			return editorResultMsg{err: err}
 		}
 
 		content, readErr := os.ReadFile(tmpPath)
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		if readErr != nil {
 			return editorResultMsg{err: readErr}
 		}

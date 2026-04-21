@@ -1,9 +1,23 @@
 # gh-tuissue
 
-![tuissue-demo](https://github.com/user-attachments/assets/5be8dc5e-4c12-439d-9829-39a36c1bc6bf)
+![tuissue-demo](./demo.gif)
 
 
-`gh-tuissue` is a GitHub CLI extension for browsing and updating repository issues from the terminal. It provides a kanban-style view backed by GitHub Issues and, when configured, GitHub Projects columns.
+`gh-tuissue` is a GitHub CLI extension that provides a TUI (Text User Interface) for browsing and updating repository issues from the terminal. It offers a kanban-style view backed by GitHub Issues and, when configured, GitHub Projects columns.
+
+## Installation
+
+Install as a GitHub CLI extension:
+
+```bash
+gh extension install masamichhhhi/gh-tuissue
+```
+
+Update later with:
+
+```bash
+gh extension upgrade gh-tuissue
+```
 
 ## Features
 
@@ -20,22 +34,8 @@
 ## Requirements
 
 - `gh` CLI installed and authenticated
-- Go `1.25.0` or newer for local development
 - Access to the target GitHub repository and, if used, its GitHub Project
 
-## Installation
-
-Install as a GitHub CLI extension:
-
-```bash
-gh extension install masamichhhhi/gh-tuissue
-```
-
-Update later with:
-
-```bash
-gh extension upgrade gh-tuissue
-```
 
 ## Usage
 
@@ -61,20 +61,28 @@ gh tuissue --version
 
 - `--repo`, `-R`: repository in `owner/name` format. If omitted, `origin` is used.
 - `--project`, `-p`: GitHub Project number used to derive kanban columns.
+- `--config`: re-select the GitHub Project binding.
 - `--version`: print version and exit.
 
 ## Keyboard shortcuts
+
+### Global
+
+- `Ctrl+C`: quit
+- `Esc`: back (on board view, quit)
+- `?`: show help
 
 ### Board view
 
 - `h` / `l` / `←` / `→`: switch column
 - `j` / `k` / `↑` / `↓`: move cursor
-- `H` / `L`: move issue status left or right
+- `H` / `L` / `Shift+←` / `Shift+→`: move issue status left or right
+- `d`: hide current column
+- `D`: show all hidden columns
 - `Enter`: open issue detail
 - `f`: open filter panel
 - `r`: refresh issues
 - `n`: create a new issue
-- `?`: show help
 
 ### Detail view
 
@@ -95,21 +103,6 @@ gh tuissue --version
 - `Space`: toggle selection
 - `Enter`: apply filters
 - `Esc`: cancel
-
-## Development
-
-Clone the repository and run the standard Go checks:
-
-```bash
-go test ./...
-go build ./...
-```
-
-Build a local binary:
-
-```bash
-go build -o gh-tuissue .
-```
 
 ## Contributing
 
