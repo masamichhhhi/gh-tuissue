@@ -108,27 +108,6 @@ func (m BoardModel) visibleColumns() []int {
 	return vis
 }
 
-// activeToReal converts the current activeCol (which is a real index) to a real index.
-// This is an identity since activeCol always stores the real index.
-func (m BoardModel) activeToReal() int {
-	return m.activeCol
-}
-
-// realToActive returns the position of realIdx among visible columns (0-based).
-func (m BoardModel) realToActive(realIdx int) int {
-	pos := 0
-	for i := range m.columns {
-		if m.hiddenCols[i] {
-			continue
-		}
-		if i == realIdx {
-			return pos
-		}
-		pos++
-	}
-	return 0
-}
-
 // HiddenCount returns the number of hidden columns.
 func (m BoardModel) HiddenCount() int {
 	return len(m.hiddenCols)
