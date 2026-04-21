@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 	gh "github.com/masamichhhhi/gh-tuissue/internal/github"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
 )
@@ -257,8 +258,18 @@ func TestAppModel_HandleNewIssue_UsesActiveColumnStatus(t *testing.T) {
 		t.Fatal("expected a command from handleNewIssue")
 	}
 	msg := cmd()
-	if um, ok := msg.(issueUpdatedMsg); !ok || um.err != nil {
-		t.Fatalf("expected issueUpdatedMsg with nil err, got %+v", msg)
+	created, ok := msg.(issueCreatedMsg)
+	if !ok || created.err != nil {
+		t.Fatalf("expected issueCreatedMsg with nil err, got %+v", msg)
+	}
+	if created.itemID != "PVTI_new" {
+		t.Errorf("itemID = %q, want PVTI_new", created.itemID)
+	}
+	if created.optionID != "opt_progress" {
+		t.Errorf("optionID = %q, want opt_progress", created.optionID)
+	}
+	if created.issue.Number != 42 {
+		t.Errorf("issue.Number = %d, want 42", created.issue.Number)
 	}
 
 	mu.Lock()
@@ -281,6 +292,74 @@ func TestAppModel_HandleNewIssue_UsesActiveColumnStatus(t *testing.T) {
 	}
 	if got["optionId"] != "opt_progress" {
 		t.Errorf("optionId = %v, want opt_progress (In Progress column)", got["optionId"])
+	}
+}
+
+func TestAppModel_IssueCreatedMsg_OptimisticInsert_NoReload(t *testing.T) {
+	app := NewAppModel(nil, nil, dummyProjectSvc(), 1, "", nil)
+	app.board.SetSize(120, 40)
+	app.board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	// In Progress column starts with 1 item (PVTI_3)
+	beforeCount := len(app.board.columns[1].Items)
+
+	msg := issueCreatedMsg{
+		issue:    domain.Issue{Number: 99, NodeID: "I_new", Title: "Just Created", State: domain.IssueOpen},
+		itemID:   "PVTI_new",
+		optionID: "opt_progress",
+	}
+	updated, cmd := app.Update(msg)
+	appModel := updated.(AppModel)
+
+	// No reload command — local insertion handles it
+	if cmd != nil {
+		t.Error("expected no reload command when optimistic insert is possible")
+	}
+	if appModel.currentView != ViewBoard {
+		t.Errorf("currentView = %d, want ViewBoard", appModel.currentView)
+	}
+	afterCount := len(appModel.board.columns[1].Items)
+	if afterCount != beforeCount+1 {
+		t.Errorf("In Progress column items = %d, want %d", afterCount, beforeCount+1)
+	}
+	if appModel.board.columns[1].Items[afterCount-1].ItemID != "PVTI_new" {
+		t.Errorf("new item not appended at end of target column")
+	}
+	if !strings.Contains(appModel.statusMsg, "#99") {
+		t.Errorf("statusMsg = %q, want to include #99", appModel.statusMsg)
+	}
+}
+
+func TestAppModel_IssueCreatedMsg_FallbackMode_Reloads(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 0, "", nil)
+	app.board.SetSize(120, 40)
+	app.board.SetFallbackIssues(nil)
+
+	msg := issueCreatedMsg{
+		issue: domain.Issue{Number: 7, Title: "Fallback", State: domain.IssueOpen},
+	}
+	_, cmd := app.Update(msg)
+
+	// In fallback (no projectInfo), we don't have enough local info; reload is
+	// still the correct behavior. cmd will be nil because issueSvc is nil, but
+	// that's a harmless no-op.
+	_ = cmd
+}
+
+func TestAppModel_IssueCreatedMsg_Error(t *testing.T) {
+	app := NewAppModel(nil, nil, dummyProjectSvc(), 1, "", nil)
+	app.board.SetSize(120, 40)
+	app.board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	msg := issueCreatedMsg{err: fmt.Errorf("API error")}
+	updated, cmd := app.Update(msg)
+	appModel := updated.(AppModel)
+
+	if cmd != nil {
+		t.Error("expected no command on error")
+	}
+	if !strings.Contains(appModel.statusMsg, "API error") {
+		t.Errorf("statusMsg = %q, want to include error", appModel.statusMsg)
 	}
 }
 

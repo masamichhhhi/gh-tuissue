@@ -473,6 +473,66 @@ func TestBoardModel_MoveItemToColumn_BoundaryRight(t *testing.T) {
 	}
 }
 
+func TestBoardModel_InsertItem_MatchingColumn(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	beforeAll := len(board.allItems)
+	beforeInProgress := len(board.columns[1].Items)
+
+	board.InsertItem("PVTI_new", "opt_progress", domain.Issue{Number: 99, Title: "New"})
+
+	if len(board.allItems) != beforeAll+1 {
+		t.Errorf("allItems len = %d, want %d", len(board.allItems), beforeAll+1)
+	}
+	if len(board.columns[1].Items) != beforeInProgress+1 {
+		t.Errorf("In Progress items = %d, want %d", len(board.columns[1].Items), beforeInProgress+1)
+	}
+	last := board.columns[1].Items[len(board.columns[1].Items)-1]
+	if last.ItemID != "PVTI_new" || last.StatusID != "opt_progress" {
+		t.Errorf("last item = %+v, want itemID=PVTI_new, statusID=opt_progress", last)
+	}
+}
+
+func TestBoardModel_InsertItem_UnknownOption_FallsBackToFirst(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+
+	beforeFirst := len(board.columns[0].Items)
+	board.InsertItem("PVTI_new", "opt_unknown", domain.Issue{Number: 99, Title: "New"})
+
+	if len(board.columns[0].Items) != beforeFirst+1 {
+		t.Errorf("first column items = %d, want %d (fallback)", len(board.columns[0].Items), beforeFirst+1)
+	}
+}
+
+func TestBoardModel_InsertItem_FilteredOut(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+	board.SetFilter(FilterState{Labels: []string{"bug"}})
+
+	beforeAll := len(board.allItems)
+	colCountsBefore := make([]int, len(board.columns))
+	for i, c := range board.columns {
+		colCountsBefore[i] = len(c.Items)
+	}
+
+	// New issue has no "bug" label, so it should be in allItems but no column.
+	board.InsertItem("PVTI_new", "opt_progress", domain.Issue{Number: 99, Title: "No Label"})
+
+	if len(board.allItems) != beforeAll+1 {
+		t.Errorf("allItems should grow, got %d", len(board.allItems))
+	}
+	for i, c := range board.columns {
+		if len(c.Items) != colCountsBefore[i] {
+			t.Errorf("column %d items changed: %d -> %d (should be unchanged due to filter)", i, colCountsBefore[i], len(c.Items))
+		}
+	}
+}
+
 func TestTruncateText(t *testing.T) {
 	tests := []struct {
 		name     string

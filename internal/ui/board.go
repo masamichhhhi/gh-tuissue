@@ -256,6 +256,38 @@ func matchAssignees(issue domain.Issue, assignees []string) bool {
 	return false
 }
 
+// InsertItem appends a newly created project item to the matching column.
+// If optionID does not match any column, it falls back to the first column.
+// Respects the current filter: an item that doesn't match is kept in allItems
+// but not displayed in any column.
+func (m *BoardModel) InsertItem(itemID, optionID string, issue domain.Issue) {
+	item := domain.ProjectItem{
+		ItemID:   itemID,
+		Issue:    issue,
+		StatusID: optionID,
+	}
+	m.allItems = append(m.allItems, item)
+
+	if len(m.columns) == 0 {
+		return
+	}
+	if !m.matchesFilter(issue) {
+		return
+	}
+
+	targetIdx := -1
+	for i, col := range m.columns {
+		if col.OptionID == optionID {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx == -1 {
+		targetIdx = 0
+	}
+	m.columns[targetIdx].Items = append(m.columns[targetIdx].Items, item)
+}
+
 // MoveItemToColumn moves an item from one column to another, updating its StatusID.
 // It also moves the cursor to the target column. Returns false if the item or columns are invalid.
 func (m *BoardModel) MoveItemToColumn(itemID string, fromColIdx, toColIdx int) bool {

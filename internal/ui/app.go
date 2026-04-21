@@ -153,6 +153,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case issueCreatedMsg:
+		m.currentView = ViewBoard
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", msg.err)
+			return m, nil
+		}
+		m.statusMsg = fmt.Sprintf("Issue #%d created", msg.issue.Number)
+		// When we have full project context, insert optimistically so the user
+		// sees the new card immediately; GitHub's projectV2 items query is
+		// eventually consistent and a fresh reload often misses the new item.
+		if msg.itemID != "" && m.board.projectInfo != nil {
+			m.board.InsertItem(msg.itemID, msg.optionID, msg.issue)
+			return m, nil
+		}
+		// Fallback mode (no project) or project add failed: reload from source.
+		return m, m.reloadBoardData()
+
 	case statusMoveMsg:
 		if msg.err != nil {
 			m.board.RollbackItemMove(msg.itemID, msg.originalStatus, msg.originalColIdx)
@@ -467,18 +484,25 @@ func (m AppModel) handleNewIssue(content string) (tea.Model, tea.Cmd) {
 			Body:  body,
 		})
 		if err != nil {
-			return issueUpdatedMsg{err: err}
+			return issueCreatedMsg{err: err}
 		}
 
-		// Add the new issue to the project if project is configured
+		var itemID string
 		if projectID != "" && projectSvc != nil && issue.NodeID != "" {
-			itemID, addErr := projectSvc.AddItemToProject(context.Background(), projectID, issue.NodeID)
-			if addErr == nil && itemID != "" && statusFieldID != "" && targetOptionID != "" {
-				_ = projectSvc.MoveItemStatus(context.Background(), projectID, itemID, statusFieldID, targetOptionID)
+			id, addErr := projectSvc.AddItemToProject(context.Background(), projectID, issue.NodeID)
+			if addErr == nil && id != "" {
+				itemID = id
+				if statusFieldID != "" && targetOptionID != "" {
+					_ = projectSvc.MoveItemStatus(context.Background(), projectID, itemID, statusFieldID, targetOptionID)
+				}
 			}
 		}
 
-		return issueUpdatedMsg{err: nil}
+		return issueCreatedMsg{
+			issue:    issue,
+			itemID:   itemID,
+			optionID: targetOptionID,
+		}
 	}
 }
 
@@ -540,6 +564,13 @@ type issuesLoadedMsg struct {
 
 type issueUpdatedMsg struct {
 	err error
+}
+
+type issueCreatedMsg struct {
+	issue    domain.Issue
+	itemID   string
+	optionID string
+	err      error
 }
 
 type statusMsg string
