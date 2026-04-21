@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
 )
 
@@ -187,10 +186,6 @@ func TestAppModel_StatusMoveNoProject(t *testing.T) {
 	if appModel.statusMsg != "Status move not available (no project)" {
 		t.Errorf("statusMsg = %q, want no project message", appModel.statusMsg)
 	}
-}
-
-func ptrProjectInfo(info domain.ProjectInfo) *domain.ProjectInfo {
-	return &info
 }
 
 func TestAppModel_ProjectDataMsg(t *testing.T) {
