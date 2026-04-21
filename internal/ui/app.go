@@ -452,9 +452,13 @@ func (m AppModel) handleNewIssue(content string) (tea.Model, tea.Cmd) {
 
 	svc := m.issueSvc
 	projectSvc := m.projectSvc
-	var projectID string
+	var projectID, statusFieldID, targetOptionID string
 	if m.board.projectInfo != nil {
 		projectID = m.board.projectInfo.ID
+		statusFieldID = m.board.projectInfo.StatusField.ID
+		if m.board.activeCol >= 0 && m.board.activeCol < len(m.board.columns) {
+			targetOptionID = m.board.columns[m.board.activeCol].OptionID
+		}
 	}
 
 	return m, func() tea.Msg {
@@ -468,7 +472,10 @@ func (m AppModel) handleNewIssue(content string) (tea.Model, tea.Cmd) {
 
 		// Add the new issue to the project if project is configured
 		if projectID != "" && projectSvc != nil && issue.NodeID != "" {
-			_, _ = projectSvc.AddItemToProject(context.Background(), projectID, issue.NodeID)
+			itemID, addErr := projectSvc.AddItemToProject(context.Background(), projectID, issue.NodeID)
+			if addErr == nil && itemID != "" && statusFieldID != "" && targetOptionID != "" {
+				_ = projectSvc.MoveItemStatus(context.Background(), projectID, itemID, statusFieldID, targetOptionID)
+			}
 		}
 
 		return issueUpdatedMsg{err: nil}

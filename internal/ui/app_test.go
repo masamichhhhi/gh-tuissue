@@ -1,10 +1,15 @@
 package ui
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	gh "github.com/masamichhhhi/gh-tuissue/internal/github"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
 )
 
@@ -185,6 +190,142 @@ func TestAppModel_StatusMoveNoProject(t *testing.T) {
 
 	if appModel.statusMsg != "Status move not available (no project)" {
 		t.Errorf("statusMsg = %q, want no project message", appModel.statusMsg)
+	}
+}
+
+func TestAppModel_HandleNewIssue_UsesActiveColumnStatus(t *testing.T) {
+	var mu sync.Mutex
+	var moveCalls []map[string]interface{}
+	var addCallCount int
+
+	mock := &gh.MockClient{
+		RESTPostHandler: func(ctx context.Context, path string, body interface{}, result interface{}) error {
+			// CreateIssue path: repos/owner/repo/issues
+			resp := map[string]interface{}{
+				"number":     42,
+				"node_id":    "I_new",
+				"title":      "New Issue",
+				"body":       "",
+				"state":      "open",
+				"html_url":   "https://example.com/42",
+				"created_at": "2026-01-01T00:00:00Z",
+				"updated_at": "2026-01-01T00:00:00Z",
+				"user":       map[string]interface{}{"login": "creator"},
+				"labels":     []interface{}{},
+				"assignees":  []interface{}{},
+				"milestone":  nil,
+			}
+			b, _ := json.Marshal(resp)
+			return json.Unmarshal(b, result)
+		},
+		GraphQLHandler: func(ctx context.Context, query string, variables map[string]interface{}, result interface{}) error {
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case strings.Contains(query, "addProjectV2ItemById"):
+				addCallCount++
+				resp := map[string]interface{}{
+					"addProjectV2ItemById": map[string]interface{}{
+						"item": map[string]interface{}{"id": "PVTI_new"},
+					},
+				}
+				b, _ := json.Marshal(resp)
+				return json.Unmarshal(b, result)
+			case strings.Contains(query, "updateProjectV2ItemFieldValue"):
+				copied := make(map[string]interface{}, len(variables))
+				for k, v := range variables {
+					copied[k] = v
+				}
+				moveCalls = append(moveCalls, copied)
+				return nil
+			}
+			return nil
+		},
+	}
+
+	issueSvc := service.NewIssueService(mock, "owner", "repo")
+	projectSvc := service.NewProjectService(mock, "owner", "repo")
+
+	app := NewAppModel(issueSvc, nil, projectSvc, 1, "", nil)
+	app.board.SetSize(120, 40)
+	app.board.SetProjectData(sampleProjectInfo(), sampleProjectItems())
+	// Move to "In Progress" column (index 1)
+	app.board.activeCol = 1
+
+	_, cmd := app.handleNewIssue("# Created from In Progress\n\nbody")
+	if cmd == nil {
+		t.Fatal("expected a command from handleNewIssue")
+	}
+	msg := cmd()
+	if um, ok := msg.(issueUpdatedMsg); !ok || um.err != nil {
+		t.Fatalf("expected issueUpdatedMsg with nil err, got %+v", msg)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if addCallCount != 1 {
+		t.Errorf("addProjectV2ItemById call count = %d, want 1", addCallCount)
+	}
+	if len(moveCalls) != 1 {
+		t.Fatalf("updateProjectV2ItemFieldValue call count = %d, want 1", len(moveCalls))
+	}
+	got := moveCalls[0]
+	if got["projectId"] != "PVT_123" {
+		t.Errorf("projectId = %v, want PVT_123", got["projectId"])
+	}
+	if got["itemId"] != "PVTI_new" {
+		t.Errorf("itemId = %v, want PVTI_new", got["itemId"])
+	}
+	if got["fieldId"] != "PVTSSF_1" {
+		t.Errorf("fieldId = %v, want PVTSSF_1", got["fieldId"])
+	}
+	if got["optionId"] != "opt_progress" {
+		t.Errorf("optionId = %v, want opt_progress (In Progress column)", got["optionId"])
+	}
+}
+
+func TestAppModel_HandleNewIssue_NoProject_SkipsStatusSet(t *testing.T) {
+	var graphqlCalls int
+
+	mock := &gh.MockClient{
+		RESTPostHandler: func(ctx context.Context, path string, body interface{}, result interface{}) error {
+			resp := map[string]interface{}{
+				"number":     1,
+				"node_id":    "I_1",
+				"title":      "T",
+				"body":       "",
+				"state":      "open",
+				"html_url":   "",
+				"created_at": "2026-01-01T00:00:00Z",
+				"updated_at": "2026-01-01T00:00:00Z",
+				"user":       map[string]interface{}{"login": "u"},
+				"labels":     []interface{}{},
+				"assignees":  []interface{}{},
+				"milestone":  nil,
+			}
+			b, _ := json.Marshal(resp)
+			return json.Unmarshal(b, result)
+		},
+		GraphQLHandler: func(ctx context.Context, query string, variables map[string]interface{}, result interface{}) error {
+			graphqlCalls++
+			return nil
+		},
+	}
+
+	issueSvc := service.NewIssueService(mock, "owner", "repo")
+	// No project service - fallback mode
+	app := NewAppModel(issueSvc, nil, nil, 0, "", nil)
+	app.board.SetSize(120, 40)
+	app.board.SetFallbackIssues(nil)
+
+	_, cmd := app.handleNewIssue("# My New Issue\n\nbody")
+	if cmd == nil {
+		t.Fatal("expected a command")
+	}
+	_ = cmd()
+
+	if graphqlCalls != 0 {
+		t.Errorf("expected no GraphQL calls in fallback mode, got %d", graphqlCalls)
 	}
 }
 
