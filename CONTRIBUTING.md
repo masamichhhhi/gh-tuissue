@@ -31,6 +31,12 @@ Run the extension from source during development:
 go run . --repo owner/name --project 1
 ```
 
+Build a local binary:
+
+```bash
+go build -o gh-tuissue .
+```
+
 ## Coding guidelines
 
 - Follow existing Go conventions and keep changes small and focused.

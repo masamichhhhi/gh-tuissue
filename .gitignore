@@ -1,6 +1,5 @@
 # Build artifacts
 gh-tuissue
-gh-issue-tui
 dist/
 bin/
 *.exe
@@ -21,6 +20,7 @@ vendor/
 .vscode/
 
 # Local AI and helper files
-fix.md
-oss-release-plan.md
-.claude/worktrees/
+.claude/
+.kiro/
+.serena/
+CLAUDE.local.md

@@ -40,7 +40,9 @@ func TestSaveAndLoad(t *testing.T) {
 func TestLoad_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, FileName)
-	os.WriteFile(path, []byte("{invalid json"), 0644)
+	if err := os.WriteFile(path, []byte("{invalid json"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
 
 	cfg, err := Load(dir)
 	if err == nil {
@@ -68,8 +70,12 @@ func TestSave_CreatesFile(t *testing.T) {
 func TestSave_OverwritesExisting(t *testing.T) {
 	dir := t.TempDir()
 
-	Save(dir, Config{ProjectNumber: 1})
-	Save(dir, Config{ProjectNumber: 99})
+	if err := Save(dir, Config{ProjectNumber: 1}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	if err := Save(dir, Config{ProjectNumber: 99}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
 
 	got, err := Load(dir)
 	if err != nil {

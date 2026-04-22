@@ -1,51 +1,36 @@
-# AI-DLC and Spec-Driven Development
+# gh-tuissue
 
-Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life Cycle)
+`gh-tuissue` is a GitHub CLI extension that provides a kanban-style TUI for browsing and updating repository issues. It is written in Go and built on Bubble Tea / Lip Gloss.
 
-## Project Context
+## Project layout
 
-### Paths
+- `main.go` — entry point for the `gh` extension
+- `internal/cli` — CLI flag parsing and entry wiring
+- `internal/config` — local configuration (project binding, etc.)
+- `internal/domain` — core types (issue, column, filter, …)
+- `internal/github` — `gh` CLI / GitHub API access
+- `internal/repo` — repository resolution from `origin`
+- `internal/service` — application services that glue domain + github together
+- `internal/ui` — Bubble Tea models, views, and keybindings
 
-- Steering: `.kiro/steering/`
-- Specs: `.kiro/specs/`
+User-facing docs live in `README.md`; contributor docs in `CONTRIBUTING.md`.
 
-### Steering vs Specification
+## Development
 
-**Steering** (`.kiro/steering/`) - Guide AI with project-wide rules and context
-**Specs** (`.kiro/specs/`) - Formalize development process for individual features
+- Go `1.25.0` or newer, and an authenticated `gh` CLI
+- Build: `go build ./...`
+- Test: `go test ./...`
+- Run from source: `go run . --repo owner/name --project 1`
 
-### Active Specifications
+## Coding guidelines
 
-- Check `.kiro/specs/` for active specifications
-- Use `/kiro:spec-status [feature-name]` to check progress
+- Follow existing Go conventions; keep changes small and focused.
+- Prefer clear names and explicit error handling over clever shortcuts.
+- Reuse existing packages and helpers before adding new abstractions.
+- Keep TUI changes consistent with existing Bubble Tea / Lip Gloss patterns.
+- Update `README.md` when user-visible behavior (flags, keybindings, views) changes.
 
-## Development Guidelines
+## Language
 
-- Think in English, generate responses in Japanese. All Markdown content written to project files (e.g., requirements.md, design.md, tasks.md, research.md, validation reports) MUST be written in the target language configured for this specification (see spec.json.language).
-
-## Minimal Workflow
-
-- Phase 0 (optional): `/kiro:steering`, `/kiro:steering-custom`
-- Phase 1 (Specification):
-  - `/kiro:spec-init "description"`
-  - `/kiro:spec-requirements {feature}`
-  - `/kiro:validate-gap {feature}` (optional: for existing codebase)
-  - `/kiro:spec-design {feature} [-y]`
-  - `/kiro:validate-design {feature}` (optional: design review)
-  - `/kiro:spec-tasks {feature} [-y]`
-- Phase 2 (Implementation): `/kiro:spec-impl {feature} [tasks]`
-  - `/kiro:validate-impl {feature}` (optional: after implementation)
-- Progress check: `/kiro:spec-status {feature}` (use anytime)
-
-## Development Rules
-
-- 3-phase approval workflow: Requirements → Design → Tasks → Implementation
-- Human review required each phase; use `-y` only for intentional fast-track
-- Keep steering current and verify alignment with `/kiro:spec-status`
-- Follow the user's instructions precisely, and within that scope act autonomously: gather the necessary context and complete the requested work end-to-end in this run, asking questions only when essential information is missing or the instructions are critically ambiguous.
-
-## Steering Configuration
-
-- Load entire `.kiro/steering/` as project memory
-- Default files: `product.md`, `tech.md`, `structure.md`
-- Custom files are supported (managed via `/kiro:steering-custom`)
+- Think in English. Respond to the user in Japanese.
+- Code, identifiers, commit messages, and documentation committed to the repository are written in English.
