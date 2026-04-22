@@ -153,6 +153,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case issueCreatedMsg:
+		m.currentView = ViewBoard
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", msg.err)
+			return m, nil
+		}
+		m.statusMsg = fmt.Sprintf("Issue #%d created", msg.issue.Number)
+		// When we have full project context, insert optimistically so the user
+		// sees the new card immediately; GitHub's projectV2 items query is
+		// eventually consistent and a fresh reload often misses the new item.
+		if msg.itemID != "" && m.board.projectInfo != nil {
+			m.board.InsertItem(msg.itemID, msg.optionID, msg.issue)
+			return m, nil
+		}
+		// Fallback mode (no project) or project add failed: reload from source.
+		return m, m.reloadBoardData()
+
 	case statusMoveMsg:
 		if msg.err != nil {
 			m.board.RollbackItemMove(msg.itemID, msg.originalStatus, msg.originalColIdx)
@@ -316,6 +333,10 @@ func (m AppModel) handleEscape() (tea.Model, tea.Cmd) {
 		m.currentView = m.prevView
 	case ViewDetail:
 		m.currentView = ViewBoard
+		if m.detail.dirty {
+			m.detail.dirty = false
+			return m, m.reloadBoardData()
+		}
 	case ViewBoard:
 		return m, tea.Quit
 	}
@@ -447,15 +468,41 @@ func (m AppModel) handleNewIssue(content string) (tea.Model, tea.Cmd) {
 	}
 
 	svc := m.issueSvc
+	projectSvc := m.projectSvc
+	var projectID, statusFieldID, targetOptionID string
+	if m.board.projectInfo != nil {
+		projectID = m.board.projectInfo.ID
+		statusFieldID = m.board.projectInfo.StatusField.ID
+		if m.board.activeCol >= 0 && m.board.activeCol < len(m.board.columns) {
+			targetOptionID = m.board.columns[m.board.activeCol].OptionID
+		}
+	}
+
 	return m, func() tea.Msg {
-		_, err := svc.CreateIssue(context.Background(), service.CreateIssueInput{
+		issue, err := svc.CreateIssue(context.Background(), service.CreateIssueInput{
 			Title: title,
 			Body:  body,
 		})
 		if err != nil {
-			return issueUpdatedMsg{err: err}
+			return issueCreatedMsg{err: err}
 		}
-		return issueUpdatedMsg{err: nil}
+
+		var itemID string
+		if projectID != "" && projectSvc != nil && issue.NodeID != "" {
+			id, addErr := projectSvc.AddItemToProject(context.Background(), projectID, issue.NodeID)
+			if addErr == nil && id != "" {
+				itemID = id
+				if statusFieldID != "" && targetOptionID != "" {
+					_ = projectSvc.MoveItemStatus(context.Background(), projectID, itemID, statusFieldID, targetOptionID)
+				}
+			}
+		}
+
+		return issueCreatedMsg{
+			issue:    issue,
+			itemID:   itemID,
+			optionID: targetOptionID,
+		}
 	}
 }
 
@@ -517,6 +564,13 @@ type issuesLoadedMsg struct {
 
 type issueUpdatedMsg struct {
 	err error
+}
+
+type issueCreatedMsg struct {
+	issue    domain.Issue
+	itemID   string
+	optionID string
+	err      error
 }
 
 type statusMsg string

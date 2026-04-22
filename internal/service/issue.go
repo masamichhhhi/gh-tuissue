@@ -250,6 +250,7 @@ func (s *IssueService) ListComments(ctx context.Context, number int) ([]domain.C
 
 type restIssueResponse struct {
 	Number    int    `json:"number"`
+	NodeID    string `json:"node_id"`
 	Title     string `json:"title"`
 	Body      string `json:"body"`
 	State     string `json:"state"`
@@ -329,6 +330,7 @@ func convertGraphQLIssue(node graphQLIssue) domain.Issue {
 func convertRESTIssue(resp restIssueResponse) domain.Issue {
 	issue := domain.Issue{
 		Number: resp.Number,
+		NodeID: resp.NodeID,
 		Title:  resp.Title,
 		Body:   resp.Body,
 		State:  mapRESTState(resp.State),

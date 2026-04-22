@@ -82,7 +82,7 @@ gh tuissue --version
 - `Enter`: open issue detail
 - `f`: open filter panel
 - `r`: refresh issues
-- `n`: create a new issue
+- `n`: create a new issue (assigned to the currently selected column's status)
 
 ### Detail view
 
