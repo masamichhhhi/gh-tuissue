@@ -5,12 +5,15 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/masamichhhhi/gh-tuissue/internal/config"
 )
 
-type HelpModel struct{}
+type HelpModel struct {
+	agents []config.AgentAction
+}
 
-func NewHelpModel() HelpModel {
-	return HelpModel{}
+func NewHelpModel(agents []config.AgentAction) HelpModel {
+	return HelpModel{agents: agents}
 }
 
 func (m HelpModel) Update(msg tea.Msg) (HelpModel, tea.Cmd) {
@@ -67,6 +70,21 @@ func (m HelpModel) View() string {
 				{"Esc", "Go back"},
 			},
 		},
+	}
+
+	if len(m.agents) > 0 {
+		var keys [][]string
+		for _, a := range m.agents {
+			label := a.Label
+			if label == "" {
+				label = "/" + strings.TrimPrefix(a.Skill, "/")
+			}
+			keys = append(keys, []string{a.Key, label + " (background Claude Code session)"})
+		}
+		sections = append(sections, struct {
+			title string
+			keys  [][]string
+		}{title: "Agents (board and detail)", keys: keys})
 	}
 
 	var content []string

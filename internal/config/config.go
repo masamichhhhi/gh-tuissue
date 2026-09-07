@@ -10,8 +10,23 @@ import (
 const FileName = ".gh-tuissue.json"
 
 type Config struct {
-	ProjectNumber int      `json:"project_number,omitempty"`
-	HiddenColumns []string `json:"hidden_columns,omitempty"`
+	ProjectNumber int           `json:"project_number,omitempty"`
+	HiddenColumns []string      `json:"hidden_columns,omitempty"`
+	Agents        []AgentAction `json:"agents,omitempty"`
+}
+
+// AgentAction binds a key to a Claude Code skill. Pressing the key on an
+// issue launches a background Claude Code session running the skill.
+type AgentAction struct {
+	// Key is the single character that triggers the action.
+	Key string `json:"key"`
+	// Skill is the slash command to run, with or without the leading "/".
+	Skill string `json:"skill"`
+	// Label is shown in the help view; defaults to the skill name.
+	Label string `json:"label,omitempty"`
+	// Args is the argument template passed to the skill. Supports
+	// {{number}}, {{title}} and {{url}}. Defaults to "{{number}}".
+	Args string `json:"args,omitempty"`
 }
 
 // Load reads the config file from the given repository root.
