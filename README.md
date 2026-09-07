@@ -26,6 +26,7 @@ gh extension upgrade gh-tuissue
 - Open issue details and update title, body, labels, assignees, milestone, and status
 - Create new issues without leaving the terminal
 - Optionally map board columns to a GitHub Project
+- Bind keys to Claude Code skills and launch them on an issue as background sessions
 
 ## Preview
 
@@ -103,6 +104,43 @@ gh tuissue --version
 - `Space`: toggle selection
 - `Enter`: apply filters
 - `Esc`: cancel
+
+## Agent actions (Claude Code)
+
+You can bind keys to [Claude Code](https://code.claude.com) skills. Pressing a bound key on an
+issue, in the board or detail view, starts a background Claude Code session that runs the skill
+with the issue number. The session runs in the directory you started `gh tuissue` from, so
+Claude Code picks up that directory's `.claude/` skills. The TUI keeps running; the status bar
+shows the session id and the command to attach to it.
+
+Add an `agents` list to `.gh-tuissue.json` in the repository root:
+
+```json
+{
+  "project_number": 1,
+  "agents": [
+    { "key": "x", "skill": "ticket_resolve", "label": "Resolve ticket" },
+    { "key": "X", "skill": "bugfix", "args": "{{url}}" }
+  ]
+}
+```
+
+- `key`: a single character. Uppercase letters mean `Shift+<letter>`. Built-in keys are reserved
+  and a colliding action is skipped with a warning in the status bar.
+- `skill`: the slash command to run, with or without the leading `/`.
+- `label`: optional text for the help view.
+- `args`: optional argument template. Supports `{{number}}`, `{{title}}` and `{{url}}`.
+  Defaults to `{{number}}`.
+
+The launched command is:
+
+```bash
+claude --bg --permission-mode auto -n "<number>-<title-slug>" "/<skill> <args>"
+```
+
+Requires the `claude` CLI on your `PATH` with background sessions support. List sessions with
+`claude agents`, follow one with `claude logs <id>`, and open it with `claude attach <id>`. If
+the skill stops to ask for approval, the session waits until you attach and answer.
 
 ## Contributing
 

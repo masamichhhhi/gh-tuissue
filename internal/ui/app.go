@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/masamichhhhi/gh-tuissue/internal/agent"
 	"github.com/masamichhhhi/gh-tuissue/internal/config"
 	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
@@ -40,15 +42,15 @@ type AppModel struct {
 	lastEditType  editType
 	repoRoot      string
 	cfg           *config.Config
+	agents        []config.AgentAction
 }
 
 func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, projectSvc *service.ProjectService, projectNumber int, repoRoot string, cfg *config.Config) AppModel {
-	return AppModel{
+	m := AppModel{
 		currentView:   ViewBoard,
 		board:         NewBoardModel(),
 		detail:        NewDetailModel(repoSvc, issueSvc),
 		filter:        NewFilterModel(),
-		help:          NewHelpModel(),
 		issueSvc:      issueSvc,
 		repoSvc:       repoSvc,
 		projectSvc:    projectSvc,
@@ -56,6 +58,36 @@ func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, p
 		repoRoot:      repoRoot,
 		cfg:           cfg,
 	}
+	if cfg != nil {
+		var warnings []string
+		m.agents, warnings = agent.Validate(cfg.Agents)
+		m.agents, warnings = dropReservedAgentKeys(m.agents, warnings)
+		if len(warnings) > 0 {
+			m.statusMsg = "Config: " + strings.Join(warnings, "; ")
+		}
+	}
+	m.help = NewHelpModel(m.agents)
+	return m
+}
+
+// reservedKeys are the built-in keys of the board and detail views. An agent
+// action bound to one of them is skipped so the built-in behavior stays intact.
+var reservedKeys = map[string]bool{
+	"h": true, "j": true, "k": true, "l": true, "H": true, "L": true,
+	"d": true, "D": true, "f": true, "r": true, "n": true, "?": true,
+	"s": true, "e": true, "c": true, "t": true, "a": true, "m": true,
+}
+
+func dropReservedAgentKeys(actions []config.AgentAction, warnings []string) ([]config.AgentAction, []string) {
+	var kept []config.AgentAction
+	for _, a := range actions {
+		if reservedKeys[a.Key] {
+			warnings = append(warnings, fmt.Sprintf("agent key %q is a built-in key, %q skipped", a.Key, a.Skill))
+			continue
+		}
+		kept = append(kept, a)
+	}
+	return kept, warnings
 }
 
 func (m AppModel) Init() tea.Cmd {
@@ -106,6 +138,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastEditType = editNone
 			return m, launchEditor("# Title\n\nDescription here")
 		}
+		if action, ok := m.agentActionFor(msg); ok {
+			return m.launchAgent(action)
+		}
+
+	case agentLaunchedMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Agent launch failed for #%d: %v", msg.number, msg.err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Agent %s started for #%d (%s) · claude attach %s",
+				msg.launch.ID, msg.number, msg.launch.Name, msg.launch.ID)
+		}
+		return m, nil
 
 	case projectDataMsg:
 		m.board.loading = false
@@ -254,6 +298,76 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+// agentActionFor returns the configured agent action bound to the pressed key,
+// if any. Actions are only active on the board and detail views.
+func (m AppModel) agentActionFor(msg tea.KeyPressMsg) (config.AgentAction, bool) {
+	if m.currentView != ViewBoard && m.currentView != ViewDetail {
+		return config.AgentAction{}, false
+	}
+	if msg.Mod.Contains(tea.ModCtrl) || msg.Mod.Contains(tea.ModAlt) {
+		return config.AgentAction{}, false
+	}
+	for _, a := range m.agents {
+		if keyMatches(msg, a.Key) {
+			return a, true
+		}
+	}
+	return config.AgentAction{}, false
+}
+
+// keyMatches reports whether the key press corresponds to the single-character
+// key string from the config. Uppercase letters match Shift+<letter>.
+func keyMatches(msg tea.KeyPressMsg, key string) bool {
+	runes := []rune(key)
+	if len(runes) != 1 {
+		return false
+	}
+	want := runes[0]
+	if msg.Text != "" {
+		return msg.Text == key
+	}
+	if unicode.IsUpper(want) {
+		return msg.Code == unicode.ToLower(want) && msg.Mod.Contains(tea.ModShift)
+	}
+	return msg.Code == want && !msg.Mod.Contains(tea.ModShift)
+}
+
+// selectedIssue returns the issue under the cursor in the current view.
+func (m AppModel) selectedIssue() *domain.Issue {
+	switch m.currentView {
+	case ViewBoard:
+		if item := m.board.SelectedItem(); item != nil {
+			issue := item.Issue
+			return &issue
+		}
+	case ViewDetail:
+		return m.detail.issue
+	}
+	return nil
+}
+
+// launchAgent starts a background Claude Code session running the action's
+// skill against the selected issue. The TUI keeps running; the session id is
+// reported in the status bar once `claude --bg` returns.
+//
+// The session runs in the directory gh-tuissue was started from, not the
+// repository root: Claude Code discovers project skills from its working
+// directory, and in monorepos they often live in a subdirectory.
+func (m AppModel) launchAgent(action config.AgentAction) (tea.Model, tea.Cmd) {
+	issue := m.selectedIssue()
+	if issue == nil {
+		m.statusMsg = "No issue selected"
+		return m, nil
+	}
+	number := issue.Number
+	argv := agent.Command(action, *issue)
+	m.statusMsg = fmt.Sprintf("Starting /%s for #%d...", strings.TrimPrefix(action.Skill, "/"), number)
+	return m, func() tea.Msg {
+		launch, err := agent.Run("", argv)
+		return agentLaunchedMsg{number: number, launch: launch, err: err}
+	}
 }
 
 func (m AppModel) reloadBoardData() tea.Cmd {
@@ -544,9 +658,9 @@ func (m AppModel) View() tea.View {
 func (m AppModel) keyHints() string {
 	switch m.currentView {
 	case ViewBoard:
-		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status d:hide D:show enter:open f:filter r:refresh ?:help")
+		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status d:hide D:show enter:open f:filter r:refresh" + m.agentHints() + " ?:help")
 	case ViewDetail:
-		return dimStyle.Render("j/k/↑/↓:scroll s:status l:labels a:assign m:milestone e:edit c:comment esc:back")
+		return dimStyle.Render("j/k/↑/↓:scroll s:status l:labels a:assign m:milestone e:edit c:comment" + m.agentHints() + " esc:back")
 	case ViewFilter:
 		return dimStyle.Render("j/k:move space:toggle enter:apply esc:cancel")
 	case ViewHelp:
@@ -556,7 +670,22 @@ func (m AppModel) keyHints() string {
 	}
 }
 
+// agentHints renders " <key>:<skill>" for each configured agent action.
+func (m AppModel) agentHints() string {
+	var b strings.Builder
+	for _, a := range m.agents {
+		b.WriteString(" " + a.Key + ":" + strings.TrimPrefix(a.Skill, "/"))
+	}
+	return b.String()
+}
+
 // Messages
+type agentLaunchedMsg struct {
+	number int
+	launch agent.Launch
+	err    error
+}
+
 type issuesLoadedMsg struct {
 	issues []issueWithState
 	err    error

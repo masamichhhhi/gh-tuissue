@@ -5,6 +5,7 @@
 ## Project layout
 
 - `main.go` — entry point for the `gh` extension
+- `internal/agent` — launching background Claude Code sessions for an issue
 - `internal/cli` — CLI flag parsing and entry wiring
 - `internal/config` — local configuration (project binding, etc.)
 - `internal/domain` — core types (issue, column, filter, …)
