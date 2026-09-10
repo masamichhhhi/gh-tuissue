@@ -20,7 +20,7 @@ func TestLoad_FileNotExist(t *testing.T) {
 func TestSaveAndLoad(t *testing.T) {
 	dir := t.TempDir()
 
-	want := Config{ProjectNumber: 42}
+	want := Config{ProjectNumber: 42, Sort: "created-desc"}
 	if err := Save(dir, want); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
@@ -34,6 +34,9 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if got.ProjectNumber != want.ProjectNumber {
 		t.Errorf("ProjectNumber = %d, want %d", got.ProjectNumber, want.ProjectNumber)
+	}
+	if got.Sort != want.Sort {
+		t.Errorf("Sort = %q, want %q", got.Sort, want.Sort)
 	}
 }
 

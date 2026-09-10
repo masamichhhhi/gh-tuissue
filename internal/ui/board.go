@@ -18,8 +18,6 @@ type FilterState struct {
 	Labels    []string
 	Assignees []string
 	Milestone string
-	SortField string
-	SortDir   string
 }
 
 // StatusColumn represents a single column in the kanban board.
@@ -37,6 +35,7 @@ type BoardModel struct {
 	scrollOffset  map[int]int
 	loading       bool
 	filterState   FilterState
+	sortOrder     SortOrder
 	selectedIssue *domain.Issue
 	projectInfo   *domain.ProjectInfo
 	width         int
@@ -184,6 +183,22 @@ func (m *BoardModel) SetFilter(fs FilterState) {
 	m.applyFilter()
 }
 
+// SetSort sets the card order used in every column and moves each column's
+// cursor back to the top.
+func (m *BoardModel) SetSort(o SortOrder) {
+	m.sortOrder = o
+	m.applyFilter()
+	for i := range m.columns {
+		m.cursorIndex[i] = 0
+		m.scrollOffset[i] = 0
+	}
+}
+
+// SortOrder returns the current card order.
+func (m BoardModel) SortOrder() SortOrder {
+	return m.sortOrder
+}
+
 func (m *BoardModel) applyFilter() {
 	// Clear column items
 	for i := range m.columns {
@@ -212,6 +227,10 @@ func (m *BoardModel) applyFilter() {
 			}
 		}
 		m.columns[idx].Items = append(m.columns[idx].Items, item)
+	}
+
+	for i := range m.columns {
+		sortItems(m.columns[i].Items, m.sortOrder)
 	}
 }
 
@@ -286,6 +305,7 @@ func (m *BoardModel) InsertItem(itemID, optionID string, issue domain.Issue) {
 		targetIdx = 0
 	}
 	m.columns[targetIdx].Items = append(m.columns[targetIdx].Items, item)
+	sortItems(m.columns[targetIdx].Items, m.sortOrder)
 }
 
 // MoveItemToColumn moves an item from one column to another, updating its StatusID.
@@ -297,13 +317,7 @@ func (m *BoardModel) MoveItemToColumn(itemID string, fromColIdx, toColIdx int) b
 
 	// Find and remove the item from the source column
 	srcItems := m.columns[fromColIdx].Items
-	foundIdx := -1
-	for i, item := range srcItems {
-		if item.ItemID == itemID {
-			foundIdx = i
-			break
-		}
-	}
+	foundIdx := indexOfItem(srcItems, itemID)
 	if foundIdx == -1 {
 		return false
 	}
@@ -322,8 +336,9 @@ func (m *BoardModel) MoveItemToColumn(itemID string, fromColIdx, toColIdx int) b
 	// Update StatusID to target column's OptionID
 	movedItem.StatusID = m.columns[toColIdx].OptionID
 
-	// Append to target column
+	// Add to target column, keeping the current sort order
 	m.columns[toColIdx].Items = append(m.columns[toColIdx].Items, movedItem)
+	sortItems(m.columns[toColIdx].Items, m.sortOrder)
 
 	// Update allItems to keep in sync
 	for i, item := range m.allItems {
@@ -335,9 +350,20 @@ func (m *BoardModel) MoveItemToColumn(itemID string, fromColIdx, toColIdx int) b
 
 	// Move cursor to target column, pointing to the moved item
 	m.activeCol = toColIdx
-	m.cursorIndex[toColIdx] = len(m.columns[toColIdx].Items) - 1
+	m.cursorIndex[toColIdx] = indexOfItem(m.columns[toColIdx].Items, itemID)
+	m.adjustScroll()
 
 	return true
+}
+
+// indexOfItem returns the index of the item with the given ID, or -1.
+func indexOfItem(items []domain.ProjectItem, itemID string) int {
+	for i, item := range items {
+		if item.ItemID == itemID {
+			return i
+		}
+	}
+	return -1
 }
 
 // RollbackItemMove moves an item back to its original column and restores its StatusID.
@@ -366,6 +392,7 @@ func (m *BoardModel) RollbackItemMove(itemID string, originalStatusID string, or
 				// Restore StatusID and add to original column
 				item.StatusID = originalStatusID
 				m.columns[originalColIdx].Items = append(m.columns[originalColIdx].Items, item)
+				sortItems(m.columns[originalColIdx].Items, m.sortOrder)
 
 				// Update allItems
 				for j, ai := range m.allItems {
@@ -585,10 +612,16 @@ func (m BoardModel) View() string {
 
 	board := lipgloss.JoinHorizontal(lipgloss.Top, cols...)
 
-	// Filter bar
+	// Filter / sort bar
+	var header []string
 	if m.hasActiveFilter() {
-		filterBar := dimStyle.Render("Filter: " + m.filterDescription())
-		board = lipgloss.JoinVertical(lipgloss.Left, filterBar, board)
+		header = append(header, "Filter: "+m.filterDescription())
+	}
+	if m.sortOrder != SortDefault {
+		header = append(header, "Sort: "+m.sortOrder.Description())
+	}
+	if len(header) > 0 {
+		board = lipgloss.JoinVertical(lipgloss.Left, dimStyle.Render(strings.Join(header, "  ")), board)
 	}
 
 	return board

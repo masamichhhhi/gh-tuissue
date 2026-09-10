@@ -18,13 +18,14 @@ type SelectorItem struct {
 // SelectorModel is a generic select UI component that supports
 // both multi-select (labels, assignees) and single-select (milestone).
 type SelectorModel struct {
-	items       []SelectorItem
-	cursor      int
-	multiSelect bool
-	title       string
-	active      bool
-	confirmed   bool
-	cancelled   bool
+	items        []SelectorItem
+	cursor       int
+	multiSelect  bool
+	enterSelects bool
+	title        string
+	active       bool
+	confirmed    bool
+	cancelled    bool
 }
 
 // NewSelectorModel creates a new SelectorModel.
@@ -36,6 +37,20 @@ func NewSelectorModel(title string, items []SelectorItem, multiSelect bool) Sele
 		title:       title,
 		active:      true,
 	}
+}
+
+// WithEnterSelects makes Enter select the item under the cursor before
+// confirming, so a single-select list needs no Space. The cursor starts on
+// the currently selected item.
+func (m SelectorModel) WithEnterSelects() SelectorModel {
+	m.enterSelects = true
+	for i, item := range m.items {
+		if item.Selected {
+			m.cursor = i
+			break
+		}
+	}
+	return m
 }
 
 // SelectedItems returns items where Selected is true.
@@ -79,6 +94,11 @@ func (m SelectorModel) Update(msg tea.Msg) (SelectorModel, tea.Cmd) {
 				}
 			}
 		case tea.KeyEnter:
+			if m.enterSelects && !m.multiSelect && m.cursor < len(m.items) {
+				for i := range m.items {
+					m.items[i].Selected = i == m.cursor
+				}
+			}
 			m.confirmed = true
 			m.active = false
 		case tea.KeyEscape:
@@ -121,7 +141,9 @@ func (m SelectorModel) View() string {
 	}
 
 	sb.WriteString("\n")
-	if m.multiSelect {
+	if m.enterSelects && !m.multiSelect {
+		sb.WriteString(dimStyle.Render("j/k:move enter:apply esc:cancel"))
+	} else if m.multiSelect {
 		sb.WriteString(dimStyle.Render("j/k:move space:toggle enter:confirm esc:cancel"))
 	} else {
 		sb.WriteString(dimStyle.Render("j/k:move space:select enter:confirm esc:cancel"))

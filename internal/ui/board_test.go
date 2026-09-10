@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -602,6 +603,89 @@ func TestTruncateText(t *testing.T) {
 				t.Errorf("truncated text contains replacement character: %q", got)
 			}
 		})
+	}
+}
+
+func TestBoardModel_SetSort(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), datedItems())
+	board.cursorIndex[0] = 2
+
+	board.SetSort(SortCreatedDesc)
+	if got := issueNumbers(board.columns[0].Items); !slices.Equal(got, []int{3, 2, 1}) {
+		t.Errorf("created desc = %v, want [3 2 1]", got)
+	}
+	if board.cursorIndex[0] != 0 {
+		t.Errorf("cursorIndex[0] = %d, want 0 after sort change", board.cursorIndex[0])
+	}
+
+	board.SetSort(SortDefault)
+	if got := issueNumbers(board.columns[0].Items); !slices.Equal(got, []int{2, 1, 3}) {
+		t.Errorf("default = %v, want load order [2 1 3]", got)
+	}
+}
+
+func TestBoardModel_SortSurvivesFilter(t *testing.T) {
+	items := datedItems()
+	items[0].Issue.Labels = []domain.Label{{Name: "bug"}} // #2
+	items[2].Issue.Labels = []domain.Label{{Name: "bug"}} // #3
+	board := NewBoardModel()
+	board.SetProjectData(sampleProjectInfo(), items)
+
+	board.SetSort(SortCreatedDesc)
+	board.SetFilter(FilterState{Labels: []string{"bug"}})
+	if got := issueNumbers(board.columns[0].Items); !slices.Equal(got, []int{3, 2}) {
+		t.Errorf("filtered + sorted = %v, want [3 2]", got)
+	}
+}
+
+func TestBoardModel_InsertItem_Sorted(t *testing.T) {
+	board := NewBoardModel()
+	board.SetProjectData(sampleProjectInfo(), datedItems())
+	board.SetSort(SortCreatedDesc)
+
+	newest := datedItem(99, 40, 40)
+	board.InsertItem(newest.ItemID, "opt_todo", newest.Issue)
+	if got := issueNumbers(board.columns[0].Items); !slices.Equal(got, []int{99, 3, 2, 1}) {
+		t.Errorf("after insert = %v, want [99 3 2 1]", got)
+	}
+}
+
+func TestBoardModel_MoveItemToColumn_Sorted_CursorFollows(t *testing.T) {
+	items := datedItems()
+	items[1].StatusID = "opt_progress" // #1
+	items[2].StatusID = "opt_progress" // #3
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), items)
+	board.SetSort(SortCreatedDesc)
+
+	// #2 was created between #1 and #3, so it lands in the middle.
+	board.MoveItemToColumn("PVTI_2", 0, 1)
+	if got := issueNumbers(board.columns[1].Items); !slices.Equal(got, []int{3, 2, 1}) {
+		t.Errorf("In Progress = %v, want [3 2 1]", got)
+	}
+	if board.cursorIndex[1] != 1 {
+		t.Errorf("cursorIndex[1] = %d, want 1 (the moved item)", board.cursorIndex[1])
+	}
+	if item := board.SelectedItem(); item == nil || item.ItemID != "PVTI_2" {
+		t.Errorf("selected item = %+v, want PVTI_2", item)
+	}
+}
+
+func TestBoardModel_View_ShowsSort(t *testing.T) {
+	board := NewBoardModel()
+	board.SetSize(120, 40)
+	board.SetProjectData(sampleProjectInfo(), datedItems())
+	board.loading = false
+
+	if strings.Contains(board.View(), "Sort:") {
+		t.Error("default order should not show a sort header")
+	}
+	board.SetSort(SortUpdatedAsc)
+	if !strings.Contains(board.View(), "Sort: updated ↑") {
+		t.Error("expected sort header for updated asc")
 	}
 }
 

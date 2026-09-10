@@ -3,12 +3,16 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/masamichhhhi/gh-tuissue/internal/agent"
+	"github.com/masamichhhhi/gh-tuissue/internal/config"
 	"github.com/masamichhhhi/gh-tuissue/internal/domain"
 	gh "github.com/masamichhhhi/gh-tuissue/internal/github"
 	"github.com/masamichhhhi/gh-tuissue/internal/service"
@@ -413,7 +417,7 @@ func TestAppModel_ProjectDataMsg(t *testing.T) {
 	app.board.loading = true
 
 	msg := projectDataMsg{
-		info: sampleProjectInfo(),
+		info:  sampleProjectInfo(),
 		items: sampleProjectItems(),
 	}
 	updated, _ := app.Update(msg)
@@ -423,5 +427,187 @@ func TestAppModel_ProjectDataMsg(t *testing.T) {
 	}
 	if len(appModel.board.columns) != 3 {
 		t.Errorf("expected 3 columns, got %d", len(appModel.board.columns))
+	}
+}
+
+func TestAppModel_AgentActions_ValidatedAndReservedSkipped(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentAction{
+		{Key: "x", Skill: "ticket_resolve"},
+		{Key: "n", Skill: "collides_with_new_issue"},
+		{Key: "xy", Skill: "bad_key"},
+	}}
+	app := NewAppModel(nil, nil, nil, 1, "", cfg)
+	if len(app.agents) != 1 || app.agents[0].Skill != "ticket_resolve" {
+		t.Fatalf("agents = %+v, want only ticket_resolve", app.agents)
+	}
+	if !strings.Contains(app.statusMsg, "built-in key") || !strings.Contains(app.statusMsg, "single character") {
+		t.Errorf("statusMsg = %q, want both config warnings", app.statusMsg)
+	}
+}
+
+func TestAppModel_AgentKey_NoIssueSelected(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentAction{{Key: "x", Skill: "ticket_resolve"}}}
+	app := NewAppModel(nil, nil, nil, 1, "", cfg)
+	updated, cmd := app.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	appModel := updated.(AppModel)
+	if cmd != nil {
+		t.Fatal("expected no command without a selected issue")
+	}
+	if appModel.statusMsg != "No issue selected" {
+		t.Errorf("statusMsg = %q", appModel.statusMsg)
+	}
+}
+
+func TestAppModel_AgentKey_LaunchesForSelectedIssue(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentAction{{Key: "x", Skill: "ticket_resolve"}}}
+	app := NewAppModel(nil, nil, nil, 1, "", cfg)
+	app.board.columns = []StatusColumn{{Name: "Todo", Items: []domain.ProjectItem{
+		{ItemID: "i1", Issue: domain.Issue{Number: 548, Title: "Broken"}},
+	}}}
+	updated, cmd := app.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	appModel := updated.(AppModel)
+	if cmd == nil {
+		t.Fatal("expected a launch command")
+	}
+	if appModel.statusMsg != "Starting /ticket_resolve for #548..." {
+		t.Errorf("statusMsg = %q", appModel.statusMsg)
+	}
+}
+
+func TestAppModel_AgentKey_IgnoredOutsideBoardAndDetail(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentAction{{Key: "x", Skill: "ticket_resolve"}}}
+	app := NewAppModel(nil, nil, nil, 1, "", cfg)
+	app.currentView = ViewFilter
+	updated, _ := app.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if updated.(AppModel).statusMsg != "" {
+		t.Errorf("agent key should be ignored in filter view, got %q", updated.(AppModel).statusMsg)
+	}
+}
+
+func TestAppModel_AgentLaunchedMsg(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
+
+	updated, _ := app.Update(agentLaunchedMsg{number: 548, launch: agent.Launch{ID: "25e6d329", Name: "548-broken"}})
+	got := updated.(AppModel).statusMsg
+	if !strings.Contains(got, "25e6d329") || !strings.Contains(got, "#548") || !strings.Contains(got, "claude attach 25e6d329") {
+		t.Errorf("statusMsg = %q", got)
+	}
+
+	updated, _ = app.Update(agentLaunchedMsg{number: 548, err: errors.New("claude not found in PATH")})
+	got = updated.(AppModel).statusMsg
+	if !strings.Contains(got, "failed") || !strings.Contains(got, "not found") {
+		t.Errorf("statusMsg = %q", got)
+	}
+}
+
+func TestAppModel_SortKey_OpensSortView(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
+	updated, _ := app.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	if got := updated.(AppModel).currentView; got != ViewSort {
+		t.Errorf("after s key, view = %d, want ViewSort (%d)", got, ViewSort)
+	}
+}
+
+func TestAppModel_SortView_EnterAppliesAndSaves(t *testing.T) {
+	dir := t.TempDir()
+	app := NewAppModel(nil, nil, nil, 1, dir, nil)
+	app.board.SetProjectData(sampleProjectInfo(), datedItems())
+
+	var model tea.Model = app
+	model, _ = model.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	model, _ = model.Update(tea.KeyPressMsg{Code: 'j'}) // Created: newest first
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	appModel := model.(AppModel)
+
+	if appModel.currentView != ViewBoard {
+		t.Errorf("view = %d, want ViewBoard after Enter", appModel.currentView)
+	}
+	if appModel.board.SortOrder() != SortCreatedDesc {
+		t.Errorf("sort = %q, want %q", appModel.board.SortOrder(), SortCreatedDesc)
+	}
+	if got := issueNumbers(appModel.board.columns[0].Items); !slices.Equal(got, []int{3, 2, 1}) {
+		t.Errorf("Todo = %v, want [3 2 1]", got)
+	}
+	cfg, err := config.Load(dir)
+	if err != nil || cfg == nil {
+		t.Fatalf("config.Load = %+v, %v", cfg, err)
+	}
+	if cfg.Sort != string(SortCreatedDesc) {
+		t.Errorf("saved sort = %q, want %q", cfg.Sort, SortCreatedDesc)
+	}
+}
+
+func TestAppModel_SortView_EscKeepsOrder(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
+
+	var model tea.Model = app
+	model, _ = model.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	model, _ = model.Update(tea.KeyPressMsg{Code: 'j'})
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	appModel := model.(AppModel)
+
+	if appModel.currentView != ViewBoard {
+		t.Errorf("view = %d, want ViewBoard after Esc", appModel.currentView)
+	}
+	if appModel.board.SortOrder() != SortDefault {
+		t.Errorf("sort = %q, want default after Esc", appModel.board.SortOrder())
+	}
+}
+
+func TestAppModel_SortFromConfig(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", &config.Config{Sort: "updated-asc"})
+	if app.board.SortOrder() != SortUpdatedAsc {
+		t.Errorf("sort = %q, want %q", app.board.SortOrder(), SortUpdatedAsc)
+	}
+
+	app = NewAppModel(nil, nil, nil, 1, "", &config.Config{Sort: "newest"})
+	if app.board.SortOrder() != SortDefault {
+		t.Errorf("sort = %q, want default for invalid config", app.board.SortOrder())
+	}
+	if !strings.Contains(app.statusMsg, `unknown sort "newest"`) {
+		t.Errorf("statusMsg = %q, want unknown sort warning", app.statusMsg)
+	}
+}
+
+func TestAppModel_SortKey_OnlyOnBoard(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
+	app.currentView = ViewDetail
+	updated, _ := app.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	if got := updated.(AppModel).currentView; got != ViewDetail {
+		t.Errorf("s in detail view switched to view %d, want ViewDetail", got)
+	}
+}
+
+func TestAppModel_ShiftS_LeftForAgents(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentAction{{Key: "S", Skill: "summarize"}}}
+	app := NewAppModel(nil, nil, nil, 1, "", cfg)
+	updated, _ := app.Update(tea.KeyPressMsg{Code: 's', Text: "S", Mod: tea.ModShift})
+	appModel := updated.(AppModel)
+	if appModel.currentView == ViewSort {
+		t.Fatal("Shift+S should not open the sort picker")
+	}
+	if appModel.statusMsg != "No issue selected" {
+		t.Errorf("statusMsg = %q, want the agent action to handle Shift+S", appModel.statusMsg)
+	}
+}
+
+func TestKeyMatches(t *testing.T) {
+	cases := []struct {
+		msg  tea.KeyPressMsg
+		key  string
+		want bool
+	}{
+		{tea.KeyPressMsg{Code: 'x', Text: "x"}, "x", true},
+		{tea.KeyPressMsg{Code: 'x'}, "x", true},
+		{tea.KeyPressMsg{Code: 'x', Mod: tea.ModShift}, "x", false},
+		{tea.KeyPressMsg{Code: 'x', Mod: tea.ModShift}, "X", true},
+		{tea.KeyPressMsg{Code: 'x', Text: "X", Mod: tea.ModShift}, "X", true},
+		{tea.KeyPressMsg{Code: 'y', Text: "y"}, "x", false},
+		{tea.KeyPressMsg{Code: 'x'}, "xy", false},
+	}
+	for _, c := range cases {
+		if got := keyMatches(c.msg, c.key); got != c.want {
+			t.Errorf("keyMatches(%+v, %q) = %v, want %v", c.msg, c.key, got, c.want)
+		}
 	}
 }
