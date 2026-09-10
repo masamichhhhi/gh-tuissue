@@ -12,6 +12,7 @@ const FileName = ".gh-tuissue.json"
 type Config struct {
 	ProjectNumber int           `json:"project_number,omitempty"`
 	HiddenColumns []string      `json:"hidden_columns,omitempty"`
+	Sort          string        `json:"sort,omitempty"`
 	Agents        []AgentAction `json:"agents,omitempty"`
 }
 

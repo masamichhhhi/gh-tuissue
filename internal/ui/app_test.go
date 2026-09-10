@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -496,6 +497,97 @@ func TestAppModel_AgentLaunchedMsg(t *testing.T) {
 	got = updated.(AppModel).statusMsg
 	if !strings.Contains(got, "failed") || !strings.Contains(got, "not found") {
 		t.Errorf("statusMsg = %q", got)
+	}
+}
+
+func TestAppModel_SortKey_OpensSortView(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
+	updated, _ := app.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	if got := updated.(AppModel).currentView; got != ViewSort {
+		t.Errorf("after s key, view = %d, want ViewSort (%d)", got, ViewSort)
+	}
+}
+
+func TestAppModel_SortView_EnterAppliesAndSaves(t *testing.T) {
+	dir := t.TempDir()
+	app := NewAppModel(nil, nil, nil, 1, dir, nil)
+	app.board.SetProjectData(sampleProjectInfo(), datedItems())
+
+	var model tea.Model = app
+	model, _ = model.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	model, _ = model.Update(tea.KeyPressMsg{Code: 'j'}) // Created: newest first
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	appModel := model.(AppModel)
+
+	if appModel.currentView != ViewBoard {
+		t.Errorf("view = %d, want ViewBoard after Enter", appModel.currentView)
+	}
+	if appModel.board.SortOrder() != SortCreatedDesc {
+		t.Errorf("sort = %q, want %q", appModel.board.SortOrder(), SortCreatedDesc)
+	}
+	if got := issueNumbers(appModel.board.columns[0].Items); !slices.Equal(got, []int{3, 2, 1}) {
+		t.Errorf("Todo = %v, want [3 2 1]", got)
+	}
+	cfg, err := config.Load(dir)
+	if err != nil || cfg == nil {
+		t.Fatalf("config.Load = %+v, %v", cfg, err)
+	}
+	if cfg.Sort != string(SortCreatedDesc) {
+		t.Errorf("saved sort = %q, want %q", cfg.Sort, SortCreatedDesc)
+	}
+}
+
+func TestAppModel_SortView_EscKeepsOrder(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
+
+	var model tea.Model = app
+	model, _ = model.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	model, _ = model.Update(tea.KeyPressMsg{Code: 'j'})
+	model, _ = model.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	appModel := model.(AppModel)
+
+	if appModel.currentView != ViewBoard {
+		t.Errorf("view = %d, want ViewBoard after Esc", appModel.currentView)
+	}
+	if appModel.board.SortOrder() != SortDefault {
+		t.Errorf("sort = %q, want default after Esc", appModel.board.SortOrder())
+	}
+}
+
+func TestAppModel_SortFromConfig(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", &config.Config{Sort: "updated-asc"})
+	if app.board.SortOrder() != SortUpdatedAsc {
+		t.Errorf("sort = %q, want %q", app.board.SortOrder(), SortUpdatedAsc)
+	}
+
+	app = NewAppModel(nil, nil, nil, 1, "", &config.Config{Sort: "newest"})
+	if app.board.SortOrder() != SortDefault {
+		t.Errorf("sort = %q, want default for invalid config", app.board.SortOrder())
+	}
+	if !strings.Contains(app.statusMsg, `unknown sort "newest"`) {
+		t.Errorf("statusMsg = %q, want unknown sort warning", app.statusMsg)
+	}
+}
+
+func TestAppModel_SortKey_OnlyOnBoard(t *testing.T) {
+	app := NewAppModel(nil, nil, nil, 1, "", nil)
+	app.currentView = ViewDetail
+	updated, _ := app.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
+	if got := updated.(AppModel).currentView; got != ViewDetail {
+		t.Errorf("s in detail view switched to view %d, want ViewDetail", got)
+	}
+}
+
+func TestAppModel_ShiftS_LeftForAgents(t *testing.T) {
+	cfg := &config.Config{Agents: []config.AgentAction{{Key: "S", Skill: "summarize"}}}
+	app := NewAppModel(nil, nil, nil, 1, "", cfg)
+	updated, _ := app.Update(tea.KeyPressMsg{Code: 's', Text: "S", Mod: tea.ModShift})
+	appModel := updated.(AppModel)
+	if appModel.currentView == ViewSort {
+		t.Fatal("Shift+S should not open the sort picker")
+	}
+	if appModel.statusMsg != "No issue selected" {
+		t.Errorf("statusMsg = %q, want the agent action to handle Shift+S", appModel.statusMsg)
 	}
 }
 

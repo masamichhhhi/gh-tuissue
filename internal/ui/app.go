@@ -22,6 +22,7 @@ const (
 	ViewEditor
 	ViewFilter
 	ViewHelp
+	ViewSort
 )
 
 type AppModel struct {
@@ -31,6 +32,7 @@ type AppModel struct {
 	detail        DetailModel
 	filter        FilterModel
 	help          HelpModel
+	sortPicker    SelectorModel
 	statusMsg     string
 	width         int
 	height        int
@@ -62,6 +64,11 @@ func NewAppModel(issueSvc *service.IssueService, repoSvc *service.RepoService, p
 		var warnings []string
 		m.agents, warnings = agent.Validate(cfg.Agents)
 		m.agents, warnings = dropReservedAgentKeys(m.agents, warnings)
+		if order, ok := ParseSortOrder(cfg.Sort); ok {
+			m.board.SetSort(order)
+		} else {
+			warnings = append(warnings, fmt.Sprintf("unknown sort %q, using default order", cfg.Sort))
+		}
 		if len(warnings) > 0 {
 			m.statusMsg = "Config: " + strings.Join(warnings, "; ")
 		}
@@ -134,6 +141,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prevView = ViewBoard
 			m.currentView = ViewFilter
 			return m, m.loadFilterMetadata()
+		case msg.Code == 's' && !msg.Mod.Contains(tea.ModShift) && m.currentView == ViewBoard:
+			m.prevView = ViewBoard
+			m.currentView = ViewSort
+			m.sortPicker = newSortPicker(m.board.SortOrder())
+			return m, nil
 		case msg.Code == 'n' && m.currentView == ViewBoard:
 			m.lastEditType = editNone
 			return m, launchEditor("# Title\n\nDescription here")
@@ -268,7 +280,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.board.wantConfigUpdate {
 			m.board.wantConfigUpdate = false
-			m.saveHiddenColumns()
+			m.saveConfig()
 		}
 		if m.board.selectedIssue != nil {
 			m.detail.SetIssue(*m.board.selectedIssue)
@@ -290,6 +302,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.filter.applied {
 			m.filter.applied = false
 			m.board.SetFilter(m.filter.State())
+			m.currentView = ViewBoard
+			return m, nil
+		}
+	case ViewSort:
+		m.sortPicker, cmd = m.sortPicker.Update(msg)
+		if m.sortPicker.confirmed {
+			if selected := m.sortPicker.SelectedItems(); len(selected) > 0 {
+				m.board.SetSort(SortOrder(selected[0].ID))
+				m.saveConfig()
+			}
 			m.currentView = ViewBoard
 			return m, nil
 		}
@@ -430,7 +452,8 @@ func (m AppModel) handleStatusMove() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m *AppModel) saveHiddenColumns() {
+// saveConfig persists the board's hidden columns and sort order.
+func (m *AppModel) saveConfig() {
 	if m.repoRoot == "" {
 		return
 	}
@@ -438,12 +461,13 @@ func (m *AppModel) saveHiddenColumns() {
 		m.cfg = &config.Config{}
 	}
 	m.cfg.HiddenColumns = m.board.HiddenColumnNames()
+	m.cfg.Sort = string(m.board.SortOrder())
 	_ = config.Save(m.repoRoot, *m.cfg)
 }
 
 func (m AppModel) handleEscape() (tea.Model, tea.Cmd) {
 	switch m.currentView {
-	case ViewHelp, ViewFilter:
+	case ViewHelp, ViewFilter, ViewSort:
 		m.currentView = m.prevView
 	case ViewDetail:
 		m.currentView = ViewBoard
@@ -632,6 +656,8 @@ func (m AppModel) View() tea.View {
 		content = m.filter.View()
 	case ViewHelp:
 		content = m.help.View()
+	case ViewSort:
+		content = lipgloss.Place(m.width, m.height-2, lipgloss.Center, lipgloss.Center, m.sortPicker.View())
 	default:
 		content = m.board.View()
 	}
@@ -658,13 +684,15 @@ func (m AppModel) View() tea.View {
 func (m AppModel) keyHints() string {
 	switch m.currentView {
 	case ViewBoard:
-		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status d:hide D:show enter:open f:filter r:refresh" + m.agentHints() + " ?:help")
+		return dimStyle.Render("h/l/←/→:column j/k/↑/↓:move H/L:status d:hide D:show enter:open f:filter s:sort r:refresh" + m.agentHints() + " ?:help")
 	case ViewDetail:
 		return dimStyle.Render("j/k/↑/↓:scroll s:status l:labels a:assign m:milestone e:edit c:comment" + m.agentHints() + " esc:back")
 	case ViewFilter:
 		return dimStyle.Render("j/k:move space:toggle enter:apply esc:cancel")
 	case ViewHelp:
 		return dimStyle.Render("esc:close")
+	case ViewSort:
+		return dimStyle.Render("j/k:move enter:apply esc:cancel")
 	default:
 		return ""
 	}

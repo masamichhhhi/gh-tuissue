@@ -82,6 +82,7 @@ gh tuissue --version
 - `D`: show all hidden columns
 - `Enter`: open issue detail
 - `f`: open filter panel
+- `s`: sort issues by created or updated date
 - `r`: refresh issues
 - `n`: create a new issue (assigned to the currently selected column's status)
 
@@ -104,6 +105,17 @@ gh tuissue --version
 - `Space`: toggle selection
 - `Enter`: apply filters
 - `Esc`: cancel
+
+### Sort view
+
+- `j` / `k` / `↑` / `↓`: move cursor
+- `Enter`: apply the highlighted order
+- `Esc`: cancel
+
+Cards can be sorted by created or updated date, newest or oldest first, or kept in the default
+order (project order, or most recently updated when no project is used). The order applies to
+every column and is saved as `"sort"` in `.gh-tuissue.json` (`created-desc`, `created-asc`,
+`updated-desc` or `updated-asc`).
 
 ## Agent actions (Claude Code)
 

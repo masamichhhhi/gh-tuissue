@@ -70,6 +70,43 @@ func TestSelectorModel_SingleSelect(t *testing.T) {
 	}
 }
 
+func TestSelectorModel_EnterSelects(t *testing.T) {
+	items := []SelectorItem{
+		{ID: "a", Name: "A"},
+		{ID: "b", Name: "B", Selected: true},
+		{ID: "c", Name: "C"},
+	}
+	sel := NewSelectorModel("Sort", items, false).WithEnterSelects()
+	if sel.cursor != 1 {
+		t.Fatalf("cursor = %d, want 1 (the selected item)", sel.cursor)
+	}
+
+	sel, _ = sel.Update(tea.KeyPressMsg{Code: 'j'})
+	sel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !sel.confirmed {
+		t.Fatal("expected confirmed after Enter")
+	}
+	selected := sel.SelectedItems()
+	if len(selected) != 1 || selected[0].ID != "c" {
+		t.Errorf("selected = %+v, want only c", selected)
+	}
+}
+
+func TestSelectorModel_EnterKeepsSelectionByDefault(t *testing.T) {
+	items := []SelectorItem{
+		{ID: "1", Name: "v1.0", Selected: true},
+		{ID: "2", Name: "v2.0"},
+	}
+	sel := NewSelectorModel("Milestone", items, false)
+
+	sel, _ = sel.Update(tea.KeyPressMsg{Code: 'j'})
+	sel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	selected := sel.SelectedItems()
+	if len(selected) != 1 || selected[0].ID != "1" {
+		t.Errorf("selected = %+v, want only 1 (Enter must not change the selection)", selected)
+	}
+}
+
 func TestSelectorModel_Cancel(t *testing.T) {
 	items := []SelectorItem{{ID: "1", Name: "test"}}
 	sel := NewSelectorModel("Test", items, false)

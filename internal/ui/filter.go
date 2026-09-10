@@ -15,7 +15,6 @@ const (
 	PaneLabels FilterPane = iota
 	PaneAssignees
 	PaneMilestone
-	PaneSort
 )
 
 type FilterModel struct {

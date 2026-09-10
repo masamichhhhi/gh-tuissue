@@ -35,6 +35,7 @@ func (m HelpModel) View() string {
 				{"D", "Show all columns"},
 				{"Enter", "Open issue detail"},
 				{"f", "Open filter panel"},
+				{"s", "Sort issues"},
 				{"r", "Refresh issues"},
 				{"n", "Create new issue"},
 			},
@@ -60,6 +61,14 @@ func (m HelpModel) View() string {
 				{"Tab", "Switch pane"},
 				{"Space", "Toggle selection"},
 				{"Enter", "Apply filter"},
+				{"Esc", "Cancel"},
+			},
+		},
+		{
+			title: "Sort",
+			keys: [][]string{
+				{"j/k / ↑/↓", "Move cursor"},
+				{"Enter", "Apply sort"},
 				{"Esc", "Cancel"},
 			},
 		},
